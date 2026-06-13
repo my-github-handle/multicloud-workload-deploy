@@ -1,0 +1,24 @@
+# Terraform
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+override.tf
+override.tf.json
+.terraformrc
+terraform.rc
+
+# Go / operator
+operator/bin/
+*.test
+*.out
+
+# Helm
+charts/**/charts/
+*.tgz
+
+# OS / editor
+.DS_Store
+*.swp
