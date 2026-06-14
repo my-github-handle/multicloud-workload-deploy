@@ -1,0 +1,14 @@
+# Minimal Workload: a non-root, read-only-friendly image with autoscaling.
+# Apply: kubectl apply -f workload-basic.yaml
+apiVersion: workload.ops.dev/v1
+kind: Workload
+metadata:
+  name: demo
+  namespace: default
+spec:
+  image: hashicorp/http-echo:1.0
+  port: 5678
+  autoscale:
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilization: 70

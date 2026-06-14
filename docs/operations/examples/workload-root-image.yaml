@@ -1,0 +1,23 @@
+# Workload for an image that must run as root and/or write to its root filesystem.
+# The hardened pod-security default is relaxed explicitly and only as far as the image needs.
+apiVersion: workload.ops.dev/v1
+kind: Workload
+metadata:
+  name: legacy
+  namespace: default
+spec:
+  image: ghcr.io/e2b-dev/sre-interview:latest
+  port: 8080
+  autoscale:
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilization: 70
+  podSecurityContext:
+    runAsNonRoot: false
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: false
+    capabilities:
+      drop: ["ALL"]
