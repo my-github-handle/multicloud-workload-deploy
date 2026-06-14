@@ -1,0 +1,181 @@
+---
+# Source: workload/templates/networkpolicy.yaml
+# 1) Default-deny: select the workload's pods, deny all ingress and egress by default.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: demo-default-deny
+  namespace: demo-ns
+  labels:
+    app.kubernetes.io/name: demo
+    app.kubernetes.io/instance: demo
+    app.kubernetes.io/part-of: demo
+    app.kubernetes.io/managed-by: workload-operator
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: demo
+      app.kubernetes.io/instance: demo
+  policyTypes:
+    - Ingress
+    - Egress
+---
+# Source: workload/templates/networkpolicy.yaml
+# 2) Allow ingress to the workload's own port from within the namespace, allow DNS egress,
+#    and explicitly BLOCK egress to the cloud metadata IP (169.254.169.254). Egress is allowed
+#    to all non-metadata destinations by carving the metadata /32 out via except.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: demo-allow
+  namespace: demo-ns
+  labels:
+    app.kubernetes.io/name: demo
+    app.kubernetes.io/instance: demo
+    app.kubernetes.io/part-of: demo
+    app.kubernetes.io/managed-by: workload-operator
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: demo
+      app.kubernetes.io/instance: demo
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    # DNS (kube-dns / CoreDNS) so the workload can resolve names.
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # General egress EXCEPT the cloud metadata endpoint (credential-theft block).
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 169.254.169.254/32
+---
+# Source: workload/templates/pdb.yaml
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: demo
+  namespace: demo-ns
+  labels:
+    app.kubernetes.io/name: demo
+    app.kubernetes.io/instance: demo
+    app.kubernetes.io/part-of: demo
+    app.kubernetes.io/managed-by: workload-operator
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: demo
+      app.kubernetes.io/instance: demo
+---
+# Source: workload/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: demo
+  namespace: demo-ns
+  labels:
+    app.kubernetes.io/name: demo
+    app.kubernetes.io/instance: demo
+    app.kubernetes.io/part-of: demo
+    app.kubernetes.io/managed-by: workload-operator
+spec:
+  selector:
+    app.kubernetes.io/name: demo
+    app.kubernetes.io/instance: demo
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+---
+# Source: workload/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo
+  namespace: demo-ns
+  labels:
+    app.kubernetes.io/name: demo
+    app.kubernetes.io/instance: demo
+    app.kubernetes.io/part-of: demo
+    app.kubernetes.io/managed-by: workload-operator
+spec:
+  # replicas is intentionally omitted: the HPA owns the replica count. Setting it here would make
+  # the operator fight the autoscaler (reset to a fixed value every reconcile). Kubernetes
+  # defaults a new Deployment to 1 replica; the HPA scales it between min and max thereafter.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: demo
+      app.kubernetes.io/instance: demo
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: demo
+        app.kubernetes.io/instance: demo
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: workload
+          image: "nginx:1.27"
+          ports:
+            - containerPort: 8080
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            limits:
+              cpu: 500m
+              memory: 256Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+---
+# Source: workload/templates/hpa.yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: demo
+  namespace: demo-ns
+  labels:
+    app.kubernetes.io/name: demo
+    app.kubernetes.io/instance: demo
+    app.kubernetes.io/part-of: demo
+    app.kubernetes.io/managed-by: workload-operator
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: demo
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
