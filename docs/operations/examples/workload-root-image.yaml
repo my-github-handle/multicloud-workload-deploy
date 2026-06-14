@@ -1,0 +1,24 @@
+# Workload for an image that must run as root and/or write to its root filesystem.
+# Stock nginx is a good example: it runs as root and writes to /var/cache/nginx and /var/run, so
+# the hardened pod-security default is relaxed explicitly and only as far as the image needs.
+apiVersion: workload.ops.dev/v1
+kind: Workload
+metadata:
+  name: legacy
+  namespace: default
+spec:
+  image: nginx:1.27
+  port: 80
+  autoscale:
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilization: 70
+  podSecurityContext:
+    runAsNonRoot: false
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: false
+    capabilities:
+      drop: ["ALL"]
