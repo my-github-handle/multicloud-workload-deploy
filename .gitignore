@@ -23,3 +23,5 @@ charts/**/charts/
 .DS_Store
 *.swp
 mage_output_file.go
+# Terraform module lock files (modules don't pin; only root configs do)
+modules/**/.terraform.lock.hcl

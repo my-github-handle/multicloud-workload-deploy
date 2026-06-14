@@ -58,9 +58,56 @@ Output is a flat JSON object with two string keys:
 - **red** — a blocking failure; apply must stop. The offending `CheckResult` carries a `message`
   and `remediation`.
 
+The verdict is computed as: **red if any blocking stage is red; else amber if any blocking stage
+is amber; else green.** A non-blocking stage (the cloud stages 0–3 in greenfield `full` mode, which
+the same apply provisions) keeps its true severity in the report but contributes at most amber to
+the verdict — it never makes the verdict red. The first blocking red short-circuits the rest
+(later stages are marked `skipped`).
+
 The binary **always exits 0** when there is no `--exit-on-red`, even on internal errors (bad
 kubeconfig, unimplemented `--cloud`) — those become a red verdict carrying the error, so a caller
 (Terraform) gates on the verdict rather than a crash.
+
+### Red conditions (what blocks a deploy)
+
+In the BYOC (`agnostic`) path these are the Kubernetes-stage reds — all check the real cluster:
+
+| Result ID | Red when |
+|---|---|
+| `k8s.unreachable` | no kubeconfig given on a real run; the target cluster is not reachable |
+| `k8s.networkpolicy` | the `networking.k8s.io` (NetworkPolicy) API is not served, or API groups cannot be listed |
+| `k8s.minversion` | the cluster Kubernetes version is below the supported floor, or cannot be read |
+| `k8s.installtier` | the deploy identity cannot create namespaced Deployments (neither Tier A nor Tier B is possible), or a SelfSubjectAccessReview call fails |
+| `k8s.workloadidentity` | the workload ServiceAccount does not exist and cannot be created |
+| `workload.namespace` | the target namespace does not exist and cannot be created (or cannot be read) |
+
+The cloud stages (0–3) add these reds once the per-cloud providers are in use (greenfield marks
+them non-blocking, so they surface as amber there):
+
+| Result ID | Red when |
+|---|---|
+| `iam.missing` | the deploy identity is missing a required permission |
+| `kms.key` / `kms.permissions` | the resolved key is missing/disabled, or the identity cannot use it |
+| `secrets.*` | the secrets backend is unreachable or material is not CMK-encrypted |
+| `egress.controlplane_fqdn` | the control-plane FQDN is unreachable — the connect-agent cannot dial home |
+| `egress.metadata_block` / `egress.ghcr` / `egress.cloud_api` | a required egress path over the allowed route fails |
+
+Everything else (no Cilium, no metrics-server, Tier B install, Argo absent/incompatible,
+image-pull not verified) is **amber**, not red — see the table below.
+
+### Can a deploy proceed when preflight fails?
+
+- **amber → yes.** Amber means "documented gaps"; the apply proceeds and the gaps are recorded in
+  the report. This is the intended path for clusters that are usable but not fully featured.
+- **red → no, by default.** The Terraform `preflight` module hard-gates a red verdict
+  (`fail_on_red = true`, the default) on the data source's postcondition, so the plan fails before
+  any resource is created.
+- **Overriding a red.** Setting `fail_on_red = false` disables the hard block. Even then, the most
+  dangerous case is still caught: if red is because the identity cannot deploy at all
+  (`k8s.installtier` red), `install_tier` is derived as `"RED"`, which is neither `"A"` nor `"B"`
+  and trips the downstream module validation — so the apply fails loudly rather than half-deploying
+  something the cluster provably cannot run. Override a red only when you understand the specific
+  failure and have a reason to proceed (e.g. a known-false-positive in a custom environment).
 
 ---
 
@@ -94,6 +141,7 @@ keys on `verdict`.
 |---|---|---|
 | `k8s.unreachable` (red) | no kubeconfig / cluster unreachable | pass `--kubeconfig` for the target cluster |
 | `k8s.networkpolicy` (red) | NetworkPolicy API not served | install a CNI that supports NetworkPolicy |
+| `k8s.minversion` (red) | cluster older than the supported floor | upgrade the cluster to the minimum supported Kubernetes version |
 | `k8s.installtier` (amber) | Tier B — namespace-only permissions | operator lifecycle unavailable; grant CRD+ClusterRole create for Tier A, or use [Tier B](./helm-only-tier-b.md) |
 | `k8s.installtier` (red) | cannot create namespaced Deployments | grant `create` on `apps/deployments` in the namespace |
 | `k8s.metricsserver` (amber) | metrics-server absent | install metrics-server so the HPA can scale on CPU |
