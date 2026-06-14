@@ -1,0 +1,45 @@
+# Identity
+name: ""
+namespace: ""
+
+# Container
+image: ""
+port: 8080
+
+# Autoscaling
+autoscale:
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilization: 70
+
+# Health checks (optional; omit to skip)
+livenessProbe: {}   # {path: /healthz, port: 8080}
+readinessProbe: {}  # {path: /ready, port: 8080}
+
+# Pod resources
+resources: {}
+
+# Security contexts. Hardened defaults are applied when these are empty; override only for
+# images that cannot run under the hardened default (e.g. need root or a writable root fs).
+podSecurityContext: {}   # e.g. {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+securityContext: {}      # e.g. {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true}
+
+# IngressClass used when ingress is enabled (per-cloud ingress controller).
+ingressClass: ""
+
+# Ingress (disabled by default). When enabled, routes host/path to the workload Service.
+ingress:
+  enabled: false
+  host: ""
+  path: /
+  pathType: Prefix
+
+# PodDisruptionBudget
+pdb:
+  minAvailable: 1
+
+# NetworkPolicy (default-deny + allow own port + cloud-metadata-IP egress block).
+# enabled defaults true so the portable in-cluster floor is always rendered.
+networkPolicy:
+  enabled: true
+  metadataIP: 169.254.169.254/32

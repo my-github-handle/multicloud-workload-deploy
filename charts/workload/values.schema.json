@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["name", "namespace", "image", "port", "autoscale"],
+  "properties": {
+    "name": { "type": "string", "minLength": 1 },
+    "namespace": { "type": "string", "minLength": 1 },
+    "image": { "type": "string", "minLength": 1 },
+    "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+    "autoscale": {
+      "type": "object",
+      "required": ["minReplicas", "maxReplicas", "targetCPUUtilization"],
+      "properties": {
+        "minReplicas": { "type": "integer", "minimum": 1 },
+        "maxReplicas": { "type": "integer", "minimum": 1 },
+        "targetCPUUtilization": { "type": "integer", "minimum": 1, "maximum": 100 }
+      }
+    },
+    "livenessProbe": {
+      "type": "object",
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 }
+      },
+      "dependencies": { "path": ["port"] }
+    },
+    "readinessProbe": {
+      "type": "object",
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 }
+      },
+      "dependencies": { "path": ["port"] }
+    },
+    "resources": { "type": "object" },
+    "podSecurityContext": { "type": "object" },
+    "securityContext": { "type": "object" },
+    "ingressClass": { "type": "string" },
+    "ingress": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "host": { "type": "string" },
+        "path": { "type": "string" },
+        "pathType": { "type": "string", "enum": ["Prefix", "Exact", "ImplementationSpecific"] }
+      },
+      "if": { "properties": { "enabled": { "const": true } } },
+      "then": { "properties": { "host": { "type": "string", "minLength": 1 } }, "required": ["host"] }
+    },
+    "pdb": {
+      "type": "object",
+      "properties": { "minAvailable": { "type": "integer", "minimum": 0 } }
+    },
+    "networkPolicy": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "metadataIP": {
+          "type": "string",
+          "description": "CIDR for the cloud metadata endpoint to block (used in an ipBlock.except).",
+          "pattern": "^([0-9]{1,3}\\.){3}[0-9]{1,3}/[0-9]{1,2}$"
+        }
+      }
+    }
+  }
+}

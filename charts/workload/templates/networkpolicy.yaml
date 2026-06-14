@@ -1,0 +1,56 @@
+{{- if .Values.networkPolicy.enabled }}
+# 1) Default-deny: select the workload's pods, deny all ingress and egress by default.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Values.name }}-default-deny
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "workload.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "workload.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+# 2) Allow ingress to the workload's own port from within the namespace, allow DNS egress,
+#    and explicitly BLOCK egress to the cloud metadata IP (169.254.169.254). Egress is allowed
+#    to all non-metadata destinations by carving the metadata /32 out via except.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Values.name }}-allow
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "workload.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "workload.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.port }}
+  egress:
+    # DNS (kube-dns / CoreDNS) so the workload can resolve names.
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # General egress EXCEPT the cloud metadata endpoint (credential-theft block).
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - {{ .Values.networkPolicy.metadataIP }}
+{{- end }}
