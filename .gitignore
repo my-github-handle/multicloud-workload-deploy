@@ -22,3 +22,4 @@ charts/**/charts/
 # OS / editor
 .DS_Store
 *.swp
+mage_output_file.go

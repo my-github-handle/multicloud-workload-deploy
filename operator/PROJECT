@@ -1,0 +1,14 @@
+domain: ops.dev
+layout:
+- go.kubebuilder.io/v4
+projectName: workload-operator
+repo: github.com/ops-dev/multicloud-workload-deploy
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  group: workload
+  kind: Workload
+  path: github.com/ops-dev/multicloud-workload-deploy/operator/api/v1
+  version: v1
+version: "3"

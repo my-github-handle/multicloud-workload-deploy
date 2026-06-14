@@ -1,0 +1,39 @@
+name: core-ci
+on:
+  pull_request:
+    paths:
+      - "operator/**"
+      - "charts/**"
+      - "go.*"
+      - "magefile.go"
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Don't leave the GitHub token in .git/config for later build steps to read.
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+      - uses: azure/setup-helm@v4
+      - name: Install mage
+        run: go install github.com/magefile/mage@v1.15.0
+      - name: Unit + envtest (coverage gate)
+        run: mage test
+      - name: Chart lint
+        run: mage lintCharts
+      - name: Cross-tier + namespace-scope grep gates
+        run: |
+          # charts/workload templates must NOT reference .Release.* — that would let the operator's
+          # in-process render and Terraform's helm_release diverge.
+          if grep -rn '\.Release\.' charts/workload/templates; then
+            echo "FAIL: charts/workload references .Release.* (breaks render parity across tiers)"; exit 1
+          fi
+          # The operator install chart must render NO cluster-scoped RBAC (the controller is
+          # namespace-scoped: Role only, never ClusterRole).
+          if helm template op charts/workload-operator --set watchNamespace=demo \
+               | grep -E '^kind: (ClusterRole|ClusterRoleBinding)$'; then
+            echo "FAIL: workload-operator rendered cluster-scoped RBAC (must be namespace-scoped)"; exit 1
+          fi
