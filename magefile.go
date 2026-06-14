@@ -36,15 +36,24 @@ var (
 	// chart render), excluding generated deepcopy and the manager main() (whose
 	// GetConfigOrDie/Start cannot run without a real apiserver).
 	coverPkg = "github.com/ops-dev/multicloud-workload-deploy/operator/internal/controller," +
-		"github.com/ops-dev/multicloud-workload-deploy/operator/internal/render"
+		"github.com/ops-dev/multicloud-workload-deploy/operator/internal/render," +
+		"github.com/ops-dev/multicloud-workload-deploy/operator/internal/preflight," +
+		"github.com/ops-dev/multicloud-workload-deploy/operator/internal/cloud/fake," +
+		"github.com/ops-dev/multicloud-workload-deploy/operator/cmd/preflight"
 )
 
 // Default runs the full verification suite.
 var Default = Verify
 
-// Verify runs the operator tests (with coverage gate) and lints both charts.
+// Verify runs the operator tests (with coverage gate), lints both charts, and builds the
+// preflight binary.
 func Verify() {
-	mg.SerialDeps(Test, LintCharts)
+	mg.SerialDeps(Test, LintCharts, PreflightBuild)
+}
+
+// PreflightBuild compiles the preflight checker binary.
+func PreflightBuild() error {
+	return sh.RunV("go", "build", "-o", "operator/bin/preflight", "./operator/cmd/preflight")
 }
 
 // Generate writes the deepcopy methods for the API types.
