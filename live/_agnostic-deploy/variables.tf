@@ -26,6 +26,10 @@ variable "install_tier_override" {
   description = "Force the install tier (\"A\"|\"B\") instead of deriving it from the preflight report. Empty = derive."
   type        = string
   default     = ""
+  validation {
+    condition     = contains(["A", "B", ""], var.install_tier_override)
+    error_message = "install_tier_override must be \"A\", \"B\", or \"\" (empty = derive)."
+  }
 }
 
 # --- Namespace / platform ---
@@ -61,6 +65,10 @@ variable "psa_enforce_level" {
   description = "Pod Security Admission enforce level for the workload namespace: \"restricted\" (default, secure floor), \"baseline\" (permits root images — required if the workload runs as root), or \"privileged\". audit/warn always track restricted."
   type        = string
   default     = "restricted"
+  validation {
+    condition     = contains(["restricted", "baseline", "privileged"], var.psa_enforce_level)
+    error_message = "psa_enforce_level must be \"restricted\", \"baseline\", or \"privileged\"."
+  }
 }
 
 # --- Observability ---

@@ -1,3 +1,10 @@
+locals {
+  # Decode the workload spec once: the workload module takes the raw YAML, the security module takes
+  # the port derived here, so the two share one source. A missing/non-numeric port fails the plan.
+  workload_spec = yamldecode(var.workload_spec_yaml)
+  workload_port = local.workload_spec.port
+}
+
 # Stage 0: Preflight. Invokes the checker binary, gates on a red verdict, and derives the install
 # tier. Everything downstream depends on the derived tier, so the gate evaluates before any
 # resource is created.
@@ -21,16 +28,15 @@ module "k8s_platform" {
   operator_image_repository = var.operator_image_repository
   operator_image_tag        = var.operator_image_tag
   create_namespace          = true
+  # For the CRD-Established wait (Tier A): same kubeconfig/context as the providers.
+  kubeconfig_path = var.kubeconfig_path
+  kube_context    = var.kube_context
 }
 
-# Stage 2: Security. In Tier B the operator chart did NOT create the namespace, so this module
-# creates+labels it. In Tier A the operator chart created the namespace, so this module does NOT
-# re-create it but STILL applies the restricted PodSecurity labels to the existing namespace.
-# Either way the namespace ends up labelled restricted exactly once.
-#
-# workload_selector_labels is left at its default ({} = namespace-wide default-deny). Do NOT
-# override it with a managed-by selector: charts/workload pods carry only app.kubernetes.io/name,
-# so a managed-by selector matches no pods and the policies become inert.
+# Stage 2: Security. manage_namespace is true only in Tier B (the operator chart creates the
+# namespace in Tier A); either way the namespace ends up labelled exactly once. workload_selector_
+# labels keeps its default ({} = namespace-wide) so the policies cannot drift from the chart's pod
+# labels. workload_port comes from the decoded spec so the allow policy matches the serving port.
 module "k8s_security" {
   source = "../../modules/k8s-security"
 
@@ -38,9 +44,7 @@ module "k8s_security" {
   manage_namespace   = module.preflight.install_tier == "B"
   control_plane_port = var.control_plane_port
   psa_enforce_level  = var.psa_enforce_level
-  # Derive the workload port from the single spec_yaml source so the namespace allow policy permits
-  # the workload's own serving port and cannot drift from the workload's container port.
-  workload_port = try(tonumber(yamldecode(var.workload_spec_yaml).port), 8080)
+  workload_port      = local.workload_port
 
   depends_on = [module.k8s_platform]
 }
@@ -67,19 +71,7 @@ module "workload" {
   spec_yaml      = var.workload_spec_yaml
   wait_for_ready = var.workload_wait_for_ready
 
-  # crd_ready threads the operator release name into the workload module purely as a documented
-  # ordering handle (it is NOT used in a depends_on inside the module). Empty string in Tier B.
-  crd_ready = module.k8s_platform.operator_release_name
-
-  # Apply ordering is enforced here, at the root: module.workload depends on k8s_platform (operator
-  # chart installs the CRD + creates the namespace in Tier A) and k8s_security (labels the namespace
-  # restricted). This module-level depends_on orders the Tier A Workload CR after the operator/CRD
-  # within the single apply.
-  #
-  # CRD-Established race: helm_release wait=true on the operator chart waits only for the chart's
-  # resources, NOT for the api-server to report the Workload CRD's Established condition. The kind
-  # runbook inserts an explicit
-  #   kubectl wait --for=condition=established crd/workloads.workload.ops.dev
-  # gate between the operator install and the CR apply to close this race.
+  # Order after k8s_platform (operator + CRD-Established wait, so the Workload kind is registered
+  # before the CR applies) and k8s_security (namespace labelled before the CR's pods are admitted).
   depends_on = [module.k8s_platform, module.k8s_security]
 }

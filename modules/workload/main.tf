@@ -19,10 +19,9 @@ locals {
     spec = local.spec
   }
 
-  # Tier B: charts/workload values. The same decoded spec, plus the identity (name/namespace) and
-  # the chart-only PDB knob the CRD does not expose. helm_release's `values` takes a YAML document,
-  # so nested fields (autoscale, probes, security contexts, resources) pass through without the
-  # per-key `set`/tostring coercion the old typed-variable form required.
+  # Tier B: charts/workload values — the same decoded spec, plus the identity (name/namespace) and
+  # the chart-only PDB knob the CRD does not expose. Passed to helm_release as a YAML document, so
+  # nested fields (autoscale, probes, security contexts, resources) pass through as-is.
   helm_values = merge(
     local.spec,
     {
@@ -33,34 +32,30 @@ locals {
   )
 }
 
-# Tier A: apply the Workload custom resource; the operator (installed by k8s-platform) reconciles
-# it into Deployment/Service/HPA/PDB and owns lifecycle, status conditions, and drift correction.
+# Tier A: apply the Workload custom resource; the operator reconciles it into
+# Deployment/Service/HPA/PDB and owns its lifecycle, status, and drift correction.
 #
-# Uses kubectl_manifest (alekc/kubectl), NOT kubernetes_manifest: kubernetes_manifest performs
-# CRD/OpenAPI schema discovery against a live cluster at plan time, so it cannot plan the CR before
-# the operator chart installs the CRD — a chicken-and-egg that breaks single-apply on a fresh
-# cluster. kubectl_manifest takes raw YAML and defers schema handling to apply time. Apply ordering
-# is wired at the root via module.workload's depends_on on module.k8s_platform.
+# kubectl_manifest applies raw YAML with no plan-time CRD schema discovery, so the CR can be planned
+# before its CRD exists and applied in the same run after the operator installs it. Apply ordering
+# is set at the root via module.workload's depends_on.
 resource "kubectl_manifest" "workload_cr" {
   count = local.is_tier_a ? 1 : 0
 
   yaml_body         = yamlencode(local.workload_manifest)
   server_side_apply = true
 
-  # Block on the operator-set Ready condition so this resource is not "done" until the Workload is
-  # actually reconciled healthy. Gated + time-bounded: on a rate-limited/slow cluster set
-  # wait_for_ready=false and confirm readiness out-of-band (kubectl wait), so a throttled api-server
-  # poll does not fail an otherwise-successful apply.
   wait = var.wait_for_ready
   timeouts {
     create = var.wait_timeout
   }
+  # Wait for the operator-set Ready status condition. condition{} matches a named status condition;
+  # the field-path matcher does not support condition list-filtering.
   dynamic "wait_for" {
     for_each = var.wait_for_ready ? [1] : []
     content {
-      field {
-        key   = "status.conditions.[type=Ready].status"
-        value = "True"
+      condition {
+        type   = "Ready"
+        status = "True"
       }
     }
   }

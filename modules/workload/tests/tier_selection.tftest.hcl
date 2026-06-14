@@ -8,6 +8,24 @@
 # this test proves selection + that the Tier B values cover the spec fields. The full Tier A vs
 # Tier B render-parity test is owned by the core render package, not duplicated here.
 
+# The module declares no provider blocks (the root supplies them); a `terraform test` run must,
+# so the kubectl provider can initialize for the Tier A plan without contacting a cluster. These
+# are dummy, non-connecting configs — command = plan never makes an API call.
+provider "kubectl" {
+  load_config_file = false
+  host             = "https://127.0.0.1:1"
+}
+
+provider "kubernetes" {
+  host = "https://127.0.0.1:1"
+}
+
+provider "helm" {
+  kubernetes {
+    host = "https://127.0.0.1:1"
+  }
+}
+
 variables {
   name      = "demo"
   namespace = "demo-ns"

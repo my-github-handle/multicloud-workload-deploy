@@ -1,18 +1,10 @@
-# Invoke the preflight checker binary. The hashicorp `external` data source requires the program
-# to print a FLAT JSON object of string->string on stdout; the binary prints exactly
-# {"verdict":"...","report_json":"..."} and always exits 0 (no --exit-on-red), so this data source
-# never errors and we can gate on the parsed verdict instead.
+# Invoke the preflight checker binary. The hashicorp `external` data source requires a flat
+# string->string JSON object on stdout; the binary prints {"verdict":...,"report_json":...} and
+# exits 0, so the data source never errors and the gate keys on the parsed verdict.
 #
-# THE HARD GATE LIVES HERE, on the data source's postcondition — NOT on a separate terraform_data
-# resource. This is deliberate and load-bearing:
-#   - An `external` data source is read during `terraform plan`, BEFORE any resource is created. A
-#     failing postcondition halts the plan, so a red verdict blocks deployment before any resource
-#     is created.
-#   - EVERY downstream consumer reads `data.external.preflight.result` (verdict, report,
-#     install_tier all derive from it), so the check is unavoidably on the critical path of the
-#     whole graph.
-#   - `result` is known at plan time, so `install_tier` stays plan-time-known and can legally drive
-#     `count` in k8s-platform/workload.
+# The hard gate is the postcondition below. The data source is read at plan time, before any
+# resource is created, and every downstream value derives from its result — so a red verdict fails
+# the plan on the critical path. result is plan-time-known, so install_tier can drive `count`.
 data "external" "preflight" {
   program = [
     var.preflight_binary,
@@ -38,11 +30,9 @@ locals {
   # The full Report, recovered by decoding the double-encoded report_json string.
   report = jsondecode(data.external.preflight.result.report_json)
 
-  # Find the Stage 4 (kubernetes infra) install-tier check result. report.stages is a list; the
-  # stage with id == 4 holds results[] with the k8s.installtier entry. We use a filtered list +
-  # [0] guarded by length(), NOT one(): one() throws on a list of length != 1, so a
-  # malformed/duplicated report would convert a data anomaly into a hard plan crash. Here a missing
-  # entry falls through to the safe floor below.
+  # Find the Stage 4 install-tier result (stage id == 4, result id == k8s.installtier). Use a
+  # length-guarded index rather than one(), so a malformed report falls through to the floor below
+  # instead of crashing the plan.
   stage4_list = [for s in local.report.stages : s if s.id == 4]
   stage4      = length(local.stage4_list) > 0 ? local.stage4_list[0] : null
 
@@ -53,14 +43,10 @@ locals {
 
   # Derive tier from the install-tier check status:
   #   green   -> "A" (operator; cluster-scoped CRD+ClusterRole creatable)
-  #   amber   -> "B" (namespace-only; operator-less namespaced manifests)
-  #   red     -> the identity cannot create even namespaced workloads. The overall verdict is then
-  #              red in this case, so the gate above blocks the apply. We surface "RED" here (an
-  #              invalid tier) rather than silently deriving "B": if fail_on_red is disabled,
-  #              deriving "B" would attempt a namespaced deploy the identity provably cannot
-  #              perform. An invalid tier trips k8s-platform's install_tier validation, failing
-  #              loudly instead of half-deploying.
-  #   missing -> "B" as the safe namespaced floor (e.g. k8s stages not run).
+  #   amber   -> "B" (namespace-only manifests)
+  #   red     -> "RED", an invalid tier that trips the downstream module validation rather than
+  #              attempting a deploy the identity cannot perform (reached only if fail_on_red=false).
+  #   missing -> "B" (safe namespaced floor)
   derived_install_tier = (
     local.installtier_status == "green" ? "A" :
     local.installtier_status == "amber" ? "B" :
@@ -71,11 +57,8 @@ locals {
   install_tier = var.install_tier_override != "" ? var.install_tier_override : local.derived_install_tier
 }
 
-# Rich, always-on reporting that native gating cannot express on its own. This check block asserts
-# ONLY the amber/non-blocking case. The RED hard gate lives exclusively in the data source's
-# postcondition above — duplicating a `verdict != "red"` assert here would emit the red failure
-# twice (once as the postcondition error, once as a check-block warning). So: red is blocked by the
-# postcondition; amber is surfaced here as a non-blocking `terraform plan` warning with the report.
+# Surface an amber verdict as a non-blocking plan warning with the full report. Red is handled by
+# the postcondition above; it is not re-asserted here.
 check "preflight_amber" {
   assert {
     condition     = local.verdict != "amber"

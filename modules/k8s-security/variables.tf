@@ -9,15 +9,16 @@ variable "manage_namespace" {
   default     = true
 }
 
-# There is deliberately NO `control_plane_fqdn` variable. The in-cluster NetworkPolicy floor cannot
-# do FQDN-granular egress (plain NetworkPolicy is CIDR/selector-based only), so an FQDN input here
-# would be a dead, false-promise input. FQDN scoping is enforced at the perimeter egress firewall
-# and, where Cilium is present, via toFQDNs. Here the egress floor is a wide CIDR on the
-# control-plane PORT with the metadata IPs carved out. The control-plane PORT is parameterized.
+# Egress to the control plane is scoped by PORT on a wide CIDR (plain NetworkPolicy is
+# CIDR/port-based, not FQDN-based); FQDN scoping is the perimeter firewall's / Cilium toFQDNs' job.
 variable "control_plane_port" {
   description = "TCP port for control-plane egress."
   type        = number
   default     = 443
+  validation {
+    condition     = var.control_plane_port >= 1 && var.control_plane_port <= 65535
+    error_message = "control_plane_port must be 1-65535."
+  }
 }
 
 variable "workload_port" {
@@ -29,6 +30,10 @@ variable "workload_port" {
   EOT
   type        = number
   default     = 8080
+  validation {
+    condition     = var.workload_port == 0 || (var.workload_port >= 1 && var.workload_port <= 65535)
+    error_message = "workload_port must be 0 (omit) or 1-65535."
+  }
 }
 
 variable "dns_namespace" {

@@ -35,3 +35,26 @@ variable "create_namespace" {
   type        = bool
   default     = true
 }
+
+variable "kubeconfig_path" {
+  description = "Path to the kubeconfig, used by the CRD-Established wait (Tier A). Must match the providers' kubeconfig."
+  type        = string
+}
+
+variable "kube_context" {
+  description = "Optional kubeconfig context for the CRD-Established wait. Empty uses the current-context."
+  type        = string
+  default     = ""
+}
+
+variable "crd_name" {
+  description = "Name of the Workload CRD to wait for Established (Tier A)."
+  type        = string
+  default     = "workloads.workload.ops.dev"
+}
+
+variable "crd_wait_timeout" {
+  description = "Timeout for the `kubectl wait --for=condition=established` gate on the Workload CRD (Tier A)."
+  type        = string
+  default     = "120s"
+}

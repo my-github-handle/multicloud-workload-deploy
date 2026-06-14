@@ -37,3 +37,17 @@ resource "helm_release" "operator" {
     value = var.namespace
   }
 }
+
+# Tier A only: wait for the Workload CRD to reach its Established condition after the operator
+# install, so a same-apply Workload CR is not rejected before the kind is registered. Exposed via
+# the crd_established output for the workload module to depend on. Uses kubectl + the kubeconfig.
+resource "terraform_data" "crd_established" {
+  count = local.is_tier_a ? 1 : 0
+
+  # Re-run when the operator release changes.
+  triggers_replace = [helm_release.operator[0].id]
+
+  provisioner "local-exec" {
+    command = "kubectl --kubeconfig=${var.kubeconfig_path} ${var.kube_context != "" ? "--context=${var.kube_context}" : ""} wait --for=condition=established crd/${var.crd_name} --timeout=${var.crd_wait_timeout}"
+  }
+}

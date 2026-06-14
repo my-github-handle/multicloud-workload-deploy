@@ -65,3 +65,23 @@ repos:
               operator/config/|
               operator/internal/render/testdata/
           ).*$
+
+  # Terraform: format, validate, lint, security-scan, and inject terraform-docs tables.
+  - repo: https://github.com/antonbabenko/pre-commit-terraform
+    rev: v1.99.4
+    hooks:
+      - id: terraform_fmt
+      - id: terraform_validate
+      - id: terraform_tflint
+        args:
+          - --args=--config=__GIT_WORKING_DIR__/.tflint.hcl
+      # trivy is the supported successor to tfsec for IaC security scanning (tfsec is deprecated
+      # and its older parser rejects Terraform `check` blocks).
+      - id: terraform_trivy
+      - id: terraform_docs
+        # Inject into the README of every dir that has one (config in .terraform-docs.yml).
+        args:
+          - --hook-config=--path-to-file=README.md
+          - --hook-config=--add-to-existing-file=true
+          - --hook-config=--create-file-if-not-exist=false
+          - --args=--config=.terraform-docs.yml

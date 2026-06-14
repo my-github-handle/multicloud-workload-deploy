@@ -1,21 +1,11 @@
-# Namespaced PodSecurity (restricted): enforce via namespace labels so the admission controller
-# rejects non-conformant pods.
-#
-# In Tier A the operator pod (and, when enabled, the connect-agent pod) run in this same namespace,
-# which we label enforce=restricted. PSA admission rejects those pods at creation unless their pod
-# templates are restricted-compliant: runAsNonRoot=true, seccompProfile.type=RuntimeDefault,
-# capabilities.drop=["ALL"], allowPrivilegeEscalation=false, no host namespaces, no privileged. The
-# operator and connect-agent pod templates must be restricted-compliant — verified by the kind run
-# (a non-compliant template fails to schedule, failing the apply loudly).
-#
-# Two paths, both ending with the namespace labelled `restricted` exactly once:
-#   - manage_namespace = true  (Tier B): create the namespace WITH the labels (no unlabeled window).
-#   - manage_namespace = false (Tier A): the operator chart already created the namespace, so attach
-#     the labels to the existing namespace via kubernetes_labels. Without this, a Tier A install
-#     would run with NO PodSecurity enforcement (the operator chart does not set PSA labels).
+# Namespaced PodSecurity: label the workload namespace so admission rejects non-conformant pods.
+# Pods in this namespace (workload, connect-agent, and in Tier A the operator) must satisfy the
+# enforce level. Two paths, both ending with the namespace labelled exactly once:
+#   - manage_namespace = true:  create the namespace with the labels.
+#   - manage_namespace = false: label the existing (operator-created) namespace via kubernetes_labels.
 locals {
   # enforce is configurable (default restricted); audit/warn always track restricted so the gap
-  # from the secure floor stays visible in events/warnings even when enforce is relaxed to baseline.
+  # from the secure floor stays visible even when enforce is relaxed to baseline.
   psa_labels = {
     "pod-security.kubernetes.io/enforce" = var.psa_enforce_level
     "pod-security.kubernetes.io/audit"   = "restricted"
@@ -63,18 +53,13 @@ resource "kubernetes_network_policy" "default_deny" {
   }
 }
 
-# Explicit allowlist layered on the namespace-wide default-deny. Egress: DNS (name resolution) + a
-# wide CIDR on the control-plane PORT (NOT an FQDN — plain NetworkPolicy cannot match FQDNs; FQDN
-# scoping is the perimeter firewall / Cilium toFQDNs) + intra-namespace traffic to the workload
-# port. Ingress: intra-namespace traffic to the workload port. The cloud metadata IP
-# 169.254.169.254 is a /32 carved out of the allowed CIDR via except (plus the wider
-# 169.254.0.0/16 link-local range), so even the broad egress allow can never reach it — a primary
-# credential-theft vector is blocked at the CNI layer regardless of the default-deny.
-#
-# The workload-port allowances are what keep this namespace-wide floor from strangling the
-# workload's own traffic: without them, the empty-selector default-deny would block intra-namespace
-# connections to the workload's serving port even though charts/workload's per-workload allow
-# policy permits them. Set workload_port = 0 to omit these.
+# Explicit allowlist layered on the namespace-wide default-deny.
+#   Egress:  DNS (53); the control-plane port on 0.0.0.0/0 with the cloud metadata IPs
+#            (169.254.169.254/32 and 169.254.0.0/16) carved out via except so the credential-theft
+#            endpoint is unreachable; and intra-namespace traffic to the workload port.
+#   Ingress: intra-namespace traffic to the workload port.
+# FQDN-granular egress is not attempted here (plain NetworkPolicy is CIDR/port-based). Set
+# workload_port = 0 to omit the workload-port allowances.
 resource "kubernetes_network_policy" "allow" {
   metadata {
     name      = "allow-dns-controlplane-and-workload"
@@ -141,9 +126,7 @@ resource "kubernetes_network_policy" "allow" {
       }
     }
 
-    # Allow egress to the control-plane port on all non-metadata destinations. 0.0.0.0/0 minus the
-    # metadata /32 — the connect-agent FQDN resolves to a public IP inside this range, while
-    # 169.254.169.254 is explicitly excluded.
+    # Egress to the control-plane port on all destinations except the cloud metadata IPs.
     egress {
       to {
         ip_block {

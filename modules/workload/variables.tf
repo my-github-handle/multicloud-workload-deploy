@@ -7,12 +7,6 @@ variable "install_tier" {
   }
 }
 
-variable "crd_ready" {
-  description = "Tier A only: a documentation/ordering handle the root MAY thread from k8s-platform's operator release. It is NOT used in a depends_on (depends_on cannot reference a variable); apply ordering is enforced at the root. Any value works. Ignored in Tier B."
-  type        = any
-  default     = null
-}
-
 variable "name" {
   description = "Workload name (CRD metadata.name / charts/workload .Values.name)."
   type        = string

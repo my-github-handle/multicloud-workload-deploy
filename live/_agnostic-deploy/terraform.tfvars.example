@@ -17,6 +17,11 @@ control_plane_port = 443
 # Disable if the customer cluster has no Prometheus-operator (ServiceMonitor CRD).
 observability_enabled = true
 
+# PodSecurity enforce level for the workload namespace. Default is "restricted" (the secure floor).
+# This example runs stock nginx, which must run as root — so it needs "baseline" (restricted PSA
+# rejects runAsNonRoot=false at admission). A non-root image should keep the default "restricted".
+psa_enforce_level = "baseline"
+
 # Workload. The spec is one YAML document (the single source for both install tiers); its fields
 # match the Workload CRD spec and charts/workload values.schema.json. Use file("workload.yaml") to
 # keep it in its own file, or an inline heredoc as shown. The security-context overrides below are
