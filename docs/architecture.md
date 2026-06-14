@@ -243,7 +243,6 @@ operator/               # Go package tree (Kubebuilder/controller-runtime) — N
                         #   (module github.com/ops-dev/multicloud-workload-deploy; go.mod at repo
                         #   root) so `//go:embed all:charts/workload` can reach repo-root charts/.
                         #   `operator/` is a package subtree; there is no go.mod under it.
-                        #   See docs/superpowers/plans/CROSS-CUTTING-DECISIONS.md (X1).
   api/v1/               # Workload CRD types (Spec + Status)
   internal/controller/  # Reconcile loop (renders the shared `workload` chart, adds lifecycle)
   internal/render/      # shared chart-render package (single source of child objects)

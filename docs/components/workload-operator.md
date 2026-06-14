@@ -9,6 +9,9 @@
 >
 > This document is the component-level architecture and design for the operator and the two Helm
 > charts. It refines the parent design for this component; where they differ the parent wins.
+>
+> Related component: [`preflight-checker.md`](./preflight-checker.md) — the staged gate that runs
+> before this operator is installed (its Stage 4 selects the Tier A vs Tier B install).
 
 ---
 
@@ -47,7 +50,7 @@ The defining design decision: the workload's child objects are defined **once**,
                 charts/workload  (one chart, one values.schema.json)
                   /                              \
    operator render (in-process)          helm template / helm_release
-        = Tier A (lifecycle)                   = Tier B (plan-driven)
+        = Tier A (lifecycle)                   = Tier B (terraform-driven)
                   \                              /
               identical child objects (asserted by a parity test)
 ```

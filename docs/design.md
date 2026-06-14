@@ -200,8 +200,8 @@ capability tier, selected by Preflight (§3, Stage 4):
 - **Tier B — operator-less (namespace-only).** When no cluster-scoped object may be created,
   no CRD or operator is installed. The `workload` Terraform module renders plain **namespaced**
   resources directly via the `kubernetes`/`helm` providers — `Deployment`, `Service`, `HPA`,
-  `PDB`, `NetworkPolicy` — into the granted namespace. Lifecycle becomes Terraform-plan-driven
-  rather than operator-driven: the `Workload` abstraction, status conditions, drift correction,
+  `PDB`, `NetworkPolicy` — into the granted namespace. Lifecycle becomes driven by `terraform
+  apply` rather than operator-driven: the `Workload` abstraction, status conditions, drift correction,
   and operator-emitted canary are not available. The workload still runs, stays within the
   security posture, and remains observable (namespaced ServiceMonitor + cloud flow logs).
 

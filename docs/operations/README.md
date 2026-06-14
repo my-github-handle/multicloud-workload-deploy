@@ -13,6 +13,7 @@ point; component-specific runbooks are linked below.
 | Doc | Scope |
 |---|---|
 | This file | Whole-project: prerequisites, deploy paths, day-2 overview |
+| [`preflight.md`](./preflight.md) | Running the preflight checker and reading its report |
 | [`workload-operator.md`](./workload-operator.md) | Tier A: operating the operator and `Workload` resources |
 | [`helm-only-tier-b.md`](./helm-only-tier-b.md) | Tier B: deploying `charts/workload` with Helm only (no operator/CRD) |
 | [`examples/`](./examples) | Runnable, copy-pasteable manifests and commands |
@@ -32,6 +33,19 @@ point; component-specific runbooks are linked below.
 
 The product has two entry shapes (see [`../architecture.md`](../architecture.md) §5). This guide
 covers the cloud-agnostic core install that both paths share.
+
+### 0. Preflight (gate before deploy)
+
+The Terraform deploy paths run the preflight checker automatically and block `apply` on a red
+verdict. To check a cluster ahead of time:
+
+```bash
+mage preflightBuild
+operator/bin/preflight --kubeconfig "$KUBECONFIG" --namespace <app-namespace> --exit-on-red
+```
+
+Green → proceed; amber → proceed with documented gaps; red → fix the reported prerequisite first.
+See [`preflight.md`](./preflight.md) for flags, result IDs, and remediation.
 
 ### 1. Install the operator (Tier A)
 

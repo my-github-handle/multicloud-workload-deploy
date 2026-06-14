@@ -14,7 +14,7 @@ cluster-scoped CRD cannot be created.
 | | Tier A (operator) | Tier B (Helm-only) |
 |---|---|---|
 | Cluster-scoped CRD/RBAC | required | **not** required |
-| Lifecycle | operator reconciles, status, drift correction | Helm/Terraform plan-driven |
+| Lifecycle | operator reconciles, status, drift correction | driven by `helm`/`terraform apply` |
 | `Workload` resource | yes | no — you set chart values directly |
 | Autoscaling (HPA) | yes | **yes** |
 | Security floor (default-deny NP, metadata block, hardened pods) | yes | yes |
