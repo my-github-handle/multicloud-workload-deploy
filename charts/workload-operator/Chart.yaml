@@ -1,0 +1,6 @@
+apiVersion: v2
+name: workload-operator
+description: Installs the Workload CRD, controller, and namespace-scoped RBAC (Tier A).
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

@@ -1,0 +1,17 @@
+namespace: workload-system
+image:
+  repository: ghcr.io/ops-dev/workload-operator
+  tag: "0.1.0"
+# Names of pre-created docker-registry secrets in the install namespace, used to pull the
+# operator image from a private registry. Leave empty for public images.
+imagePullSecrets: []
+serviceAccount:
+  name: workload-operator
+# When set, the controller watches only this namespace (namespace-scoped install).
+watchNamespace: ""
+# ServiceMonitor (Prometheus Operator). Default OFF: it requires the monitoring.coreos.com CRD,
+# which is not present on every cluster. The cluster-wide observability layer owns enabling it.
+serviceMonitor:
+  enabled: false
+  # Scrape interval; port/scheme are pinned to the metrics Service below.
+  interval: 30s

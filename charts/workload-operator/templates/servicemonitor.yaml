@@ -1,0 +1,23 @@
+{{- if .Values.serviceMonitor.enabled }}
+# Conditional: monitoring.coreos.com/v1 is a CRD that may be absent. Default off so the chart
+# installs on clusters without the Prometheus Operator; enable where it is present. The port and
+# scheme are pinned to the metrics Service so the scrape target stays consistent.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ .Values.serviceAccount.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: workload-operator
+spec:
+  namespaceSelector:
+    matchNames:
+      - {{ .Values.namespace }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: workload-operator
+  endpoints:
+    - port: metrics
+      scheme: http
+      interval: {{ .Values.serviceMonitor.interval }}
+{{- end }}

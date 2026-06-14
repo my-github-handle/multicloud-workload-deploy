@@ -1,0 +1,18 @@
+# Metrics Service. A ServiceMonitor scrapes a Service (not a Deployment), so the operator
+# exposes its controller-runtime metrics endpoint here. The cluster-wide observability layer
+# ships a ServiceMonitor selecting this label and the named "metrics" port.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.serviceAccount.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: workload-operator
+spec:
+  selector:
+    app.kubernetes.io/name: workload-operator
+  ports:
+    - name: metrics
+      port: 8080
+      targetPort: metrics
+      protocol: TCP
