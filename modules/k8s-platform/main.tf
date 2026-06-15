@@ -37,15 +37,12 @@ resource "helm_release" "operator" {
     value = var.namespace
   }
 
-  # The operator image is distributed PRIVATELY; when a pull secret name is
-  # supplied, wire it onto the operator's ServiceAccount via the chart's
-  # imagePullSecrets value so the controller image can be pulled. Empty = the
-  # image is reachable without a pull secret.
+  # Private operator image: attach an existing pull secret to the operator SA.
   dynamic "set" {
-    for_each = var.image_pull_secret_name != "" ? [var.image_pull_secret_name] : []
+    for_each = var.image_pull_secret_name != "" ? [1] : []
     content {
       name  = "imagePullSecrets[0].name"
-      value = set.value
+      value = var.image_pull_secret_name
     }
   }
 }

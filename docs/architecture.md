@@ -7,7 +7,8 @@
 > Companion documents: [`spec.md`](./spec.md) (requirements & scope) ·
 > [`design.md`](./design.md) (detailed engineering design) ·
 > [`architecture/aws.md`](./architecture/aws.md) (AWS building blocks & `aws-full` greenfield) ·
-> [`architecture/gcp.md`](./architecture/gcp.md) (GCP building blocks & `gcp-full` greenfield).
+> [`architecture/gcp.md`](./architecture/gcp.md) (GCP building blocks & `gcp-full` greenfield) ·
+> [`architecture/azure.md`](./architecture/azure.md) (Azure building blocks & `azure-full` greenfield).
 
 ---
 
@@ -195,9 +196,10 @@ nothing ever connects *into* the customer environment.
 - Preflight runs the same checks, but stages it satisfies *by provisioning* are
   informational rather than blocking. (See [`design.md`](./design.md) §3.)
 - **Per-cloud runbooks:** AWS [`operations/aws/deploy.md`](./operations/aws/deploy.md) ·
-  GCP [`operations/gcp/deploy.md`](./operations/gcp/deploy.md) (Azure planned). The per-cloud
-  building-block detail is in [`architecture/aws.md`](./architecture/aws.md) and
-  [`architecture/gcp.md`](./architecture/gcp.md).
+  GCP [`operations/gcp/deploy.md`](./operations/gcp/deploy.md) ·
+  Azure [`operations/azure/deploy.md`](./operations/azure/deploy.md). The per-cloud
+  building-block detail is in [`architecture/aws.md`](./architecture/aws.md),
+  [`architecture/gcp.md`](./architecture/gcp.md), and [`architecture/azure.md`](./architecture/azure.md).
 
 ---
 

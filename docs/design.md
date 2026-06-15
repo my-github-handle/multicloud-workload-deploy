@@ -7,10 +7,12 @@
 > Companion documents: [`spec.md`](./spec.md) (requirements & scope) ·
 > [`architecture.md`](./architecture.md) (system shape, layering, satellite model,
 > entry points, repository structure) ·
-> [`architecture/aws.md`](./architecture/aws.md) / [`architecture/gcp.md`](./architecture/gcp.md)
+> [`architecture/aws.md`](./architecture/aws.md) / [`architecture/gcp.md`](./architecture/gcp.md) /
+> [`architecture/azure.md`](./architecture/azure.md)
 > (per-cloud building-block realizations) · operations runbooks:
 > [`operations/aws/deploy.md`](./operations/aws/deploy.md),
-> [`operations/gcp/deploy.md`](./operations/gcp/deploy.md).
+> [`operations/gcp/deploy.md`](./operations/gcp/deploy.md),
+> [`operations/azure/deploy.md`](./operations/azure/deploy.md).
 
 This document covers the detailed engineering design across **all layers**:
 
@@ -24,8 +26,9 @@ This document covers the detailed engineering design across **all layers**:
 | **Layer 5** — packaging & release | BOM-versioned artifacts + provenance | §8 |
 
 The per-cloud realization of Layers 1–2 (exact resources, CIDR plans, egress design) lives in
-[`architecture/aws.md`](./architecture/aws.md) and [`architecture/gcp.md`](./architecture/gcp.md);
-this document is the cloud-agnostic contract those pages implement.
+[`architecture/aws.md`](./architecture/aws.md), [`architecture/gcp.md`](./architecture/gcp.md), and
+[`architecture/azure.md`](./architecture/azure.md); this document is the cloud-agnostic contract
+those pages implement.
 
 ---
 
@@ -138,7 +141,8 @@ onto. Like Layer 1 it is provision-or-BYO with the branch isolated in the resolv
   NetworkPolicy is native with no separate install; AKS uses Azure CNI + Cilium dataplane.
 - **BYO:** not created; the resolver looks the cluster up.
 - **Per-cloud detail:** [`architecture/aws.md`](./architecture/aws.md) (EKS + VPC CNI custom
-  networking) · [`architecture/gcp.md`](./architecture/gcp.md) (GKE Dataplane V2).
+  networking) · [`architecture/gcp.md`](./architecture/gcp.md) (GKE Dataplane V2) ·
+  [`architecture/azure.md`](./architecture/azure.md) (AKS Azure CNI Overlay + Cilium dataplane).
 
 ### 2.2 `cluster-resolver`
 
@@ -320,7 +324,8 @@ charts. There are two entry shapes; both run the **same Layer 3** and the **same
   can create the cluster-scoped CRD + ClusterRole), so the platform/workload counts are
   plan-known.
 - Per-cloud runbooks + tfvars examples: [`operations/aws/deploy.md`](./operations/aws/deploy.md),
-  [`operations/gcp/deploy.md`](./operations/gcp/deploy.md) (Azure planned).
+  [`operations/gcp/deploy.md`](./operations/gcp/deploy.md),
+  [`operations/azure/deploy.md`](./operations/azure/deploy.md).
 
 ### 4.3 State
 
