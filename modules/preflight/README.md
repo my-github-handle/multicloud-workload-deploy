@@ -3,8 +3,8 @@
 Runs the preflight checker binary through a hashicorp `external` data source and turns its verdict
 into a deploy gate.
 
-- Invokes the binary with `--mode=agnostic --kubeconfig <path> --namespace <ns>` and reads its flat
-  `{verdict, report_json}` output.
+- Invokes the binary with `--mode=<var.mode> --kubeconfig <path> --namespace <ns>` (and
+  `--cloud=<var.cloud>` when `cloud` is set) and reads its flat `{verdict, report_json}` output.
 - **Hard-gates a red verdict** on the data source's `postcondition` (evaluated at plan time, on the
   critical path of every consumer) so a red result fails the plan before any resource is created.
   Controlled by `fail_on_red` (default `true`).
@@ -43,9 +43,11 @@ No modules.
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
+| <a name="input_cloud"></a> [cloud](#input\_cloud) | Cloud provider for the binary's --cloud flag: "" (fake/agnostic), "aws", "gcp", or "azure". aws-full passes "aws" so the real AWS provider runs the cloud stages. | `string` | `""` | no |
 | <a name="input_fail_on_red"></a> [fail\_on\_red](#input\_fail\_on\_red) | When true, a red verdict fails the plan via the data-source postcondition. The check block always reports; this flag controls hard-blocking. | `bool` | `true` | no |
 | <a name="input_install_tier_override"></a> [install\_tier\_override](#input\_install\_tier\_override) | Explicit install tier override: "A", "B", or "" (empty = derive from the preflight report's k8s.installtier result). | `string` | `""` | no |
 | <a name="input_kubeconfig_path"></a> [kubeconfig\_path](#input\_kubeconfig\_path) | Path to the kubeconfig the preflight binary uses for the real Kubernetes stages 4-5. | `string` | n/a | yes |
+| <a name="input_mode"></a> [mode](#input\_mode) | Preflight mode passed to the binary: "agnostic" (BYOC fast path) or "full" (greenfield; stages satisfied by provisioning are informational). | `string` | `"agnostic"` | no |
 | <a name="input_namespace"></a> [namespace](#input\_namespace) | Target workload namespace passed to the preflight binary (--namespace). | `string` | n/a | yes |
 | <a name="input_preflight_binary"></a> [preflight\_binary](#input\_preflight\_binary) | Absolute path to the preflight checker binary (operator/cmd/preflight build output). | `string` | n/a | yes |
 

@@ -329,7 +329,7 @@ it falls under the same shared-responsibility model as the cluster
   Resolvers keep cross-module interfaces uniform so internals can change without breaking
   consumers.
 - **Terraform validation:** `fmt`, `validate`, `tflint`, per-module example fixtures; plan
-  checks in CI for each `live/` entry point against mock/test backends.
+  checks in CI for each composition root (greenfield / BYOC entry points) against mock/test backends.
 - **Operator tests:** `envtest` unit tests for the reconcile loop (Deployment/Service/HPA/PDB
   creation, status conditions, requeue behavior); coverage target ≥ 80%.
 - **Connect-agent tests:** outbound mTLS handshake against a stub control plane; pull-loop
@@ -356,3 +356,50 @@ it falls under the same shared-responsibility model as the cluster
   (deploy-time + runtime) — assert no wildcards (`*` / `kms:*` / `Resource: "*"`), that
   resources are pinned to resolver outputs, and that the action set matches the modules in the
   path; assert that adding a module action updates the rendered policy (no drift).
+
+---
+
+## 6. Packaging & Release (Layer 5)
+
+The product ships as a **single BOM-versioned release**. See [`spec.md`](./spec.md) §3 for the
+requirement; this section is the mechanics.
+
+### 6.1 Artifacts pinned by the BOM
+
+A release `vX.Y.Z` is a Bill of Materials (`release/bom-<version>.yaml`, from
+`release/bom.template.yaml`) that pins three artifacts:
+
+| Artifact | Coordinate | Immutability |
+|---|---|---|
+| Operator OCI image | `<registry>/workload-operator` | **digest** (`@sha256:…`) — the BOM records both tag and digest |
+| Helm charts | `oci://<registry>/charts/{workload-operator,workload}` | chart SemVer = the release version; digest recorded |
+| Terraform modules | `git::…//modules` | git **tag** = the release version |
+
+The chart `appVersion`, the image tag, and the module tag move in lockstep. The operator chart's
+`image.digest` value lets a production install pin the image immutably (digest wins over tag).
+
+### 6.2 Provenance
+
+- **Signing.** The operator image and both charts are **cosign-signed** (keyless/OIDC by default,
+  key-based via `COSIGN_KEY`). Consumers verify with `cosign verify`.
+- **SBOM.** An **SPDX** SBOM is generated from the operator image with `syft` and published
+  alongside it, so the dependency inventory is inspectable before install.
+
+### 6.3 Release pipeline
+
+`mage release:*` targets, composable or run together as `release:bundle`:
+
+`image` (multi-arch build + push, prints digest) → `charts` (package + OCI push) →
+`sbom` (syft SPDX) → `sign` (cosign image + charts) → `bom` (assemble `bom-<version>.yaml`).
+
+`cosign`/`syft` are optional on a dev laptop — targets that need them print an install hint and
+skip rather than fail, so the BOM can be assembled for a dry run without them.
+
+### 6.4 Marketplace packaging (future enhancement)
+
+Per-cloud marketplace listings sit **on top of** the BOM, not in place of it. Each listing is a
+publish step that: mirrors the BOM's pinned digests into the marketplace's own registry (AWS
+Marketplace ECR / GCP Artifact Registry / Azure offer images), adds the cloud's
+entitlement/metering API call in the operator (build-flag-gated so the BYO-license install is
+unaffected), and ships the listing artifacts. One listing per cloud, delivered with that cloud's
+building blocks — the BOM remains the cloud-neutral source of truth they consume.

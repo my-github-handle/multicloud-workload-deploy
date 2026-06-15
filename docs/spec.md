@@ -50,10 +50,32 @@ environments as a **BYOC (Bring Your Own Cloud) product**. We need a production-
   for its job — scoped to specific resources, no wildcards — and a customer can review the
   exact policy document before granting it.
 - Customer code and financial data never traverse the control-plane boundary.
+- The product ships as a **single versioned release**: one Bill of Materials (BOM) pins every
+  artifact — the operator image, both Helm charts, and the Terraform module set — to immutable
+  coordinates, with signed provenance (cosign signatures + an SBOM), so a customer installs,
+  upgrades, and is supported against one product version.
 
 ---
 
-## 3. Scope & Non-Goals (YAGNI)
+## 3. Packaging & Distribution
+
+The deliverable is a **product**, so its packaging is a first-class output, not an afterthought.
+
+- **Three artifacts, one BOM version.** A release (`vX.Y.Z`) is a Bill of Materials that pins:
+  the operator **OCI image** (by digest), the **Helm charts** (`workload-operator`, `workload`,
+  published as OCI artifacts), and the **Terraform module set** (git tag). Install / upgrade /
+  support / (eventual) entitlement all key on this one version. See
+  [`design.md`](./design.md) §6 for the BOM schema and release mechanics.
+- **Provenance.** The operator image and charts are **cosign-signed**, and an **SBOM** (SPDX) is generated and published with the image. Customers (and marketplaces) can
+  verify signatures and inspect the dependency inventory before installing.
+- **Immutable references.** Production installs pin the image by **digest** (`@sha256:…`), not a
+  mutable tag; the chart's `image.digest` value supports this directly.
+- **Cloud-neutral.** The BOM is the single source of truth; the per-cloud marketplace listings
+  (below) are a publish step that mirrors these same digests into each cloud's registry.
+
+---
+
+## 4. Scope & Non-Goals (YAGNI)
 
 **In scope:** reusable per-cloud Terraform building blocks (network, IAM, KMS, secrets),
 per-cloud cluster provisioning, a cloud-agnostic workload operator packaged as a Helm chart,
@@ -79,7 +101,7 @@ as versioned artifacts in the `iam` modules and asserted by preflight.
 
 ---
 
-## 4. BYO-Cluster Shared-Responsibility Contract
+## 5. BYO-Cluster Shared-Responsibility Contract
 
 When a customer brings their own cluster, we don't own the node pools, CNI, or control-plane
 configuration. Responsibilities split as follows. (Mechanics of detection and enforcement
@@ -108,7 +130,7 @@ live in [`design.md`](./design.md) — Preflight.)
 
 ---
 
-## 5. Deferred Items & Future Enhancements
+## 6. Deferred Items & Future Enhancements
 
 **Deferred (out of scope for this deliverable):**
 
@@ -120,8 +142,10 @@ live in [`design.md`](./design.md) — Preflight.)
 
 **Future enhancements (post-deliverable):**
 
-- **Marketplace packaging (AWS / GCP / Azure).** Wrap the satellite deploy as a per-cloud
-  marketplace listing with entitlement and metered-billing integration, so customers can
-  subscribe and provision through their cloud's marketplace. The satellite is already the
-  installable unit; this adds listing artifacts, entitlement checks, and usage reporting on
-  top of the existing entry points.
+- **Per-cloud marketplace listings (AWS / GCP / Azure).** Publish the BOM-versioned release as a
+  per-cloud marketplace listing with entitlement and metered-billing integration, so customers can
+  subscribe and provision through their cloud's marketplace. The BOM + signed provenance (§3) is
+  the foundation; each listing adds, per cloud: mirroring the pinned digests into the marketplace's
+  own registry, the cloud's entitlement/metering API call in the operator (gated by a build flag so
+  the BYO-license install is unaffected), and the listing artifacts. One listing per cloud,
+  delivered alongside that cloud's building blocks.

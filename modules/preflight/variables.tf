@@ -28,3 +28,23 @@ variable "install_tier_override" {
     error_message = "install_tier_override must be \"A\", \"B\", or \"\"."
   }
 }
+
+variable "mode" {
+  description = "Preflight mode passed to the binary: \"agnostic\" (BYOC fast path) or \"full\" (greenfield; stages satisfied by provisioning are informational)."
+  type        = string
+  default     = "agnostic"
+  validation {
+    condition     = contains(["agnostic", "full"], var.mode)
+    error_message = "mode must be \"agnostic\" or \"full\"."
+  }
+}
+
+variable "cloud" {
+  description = "Cloud provider for the binary's --cloud flag: \"\" (fake/agnostic), \"aws\", \"gcp\", or \"azure\". aws-full passes \"aws\" so the real AWS provider runs the cloud stages."
+  type        = string
+  default     = ""
+  validation {
+    condition     = contains(["", "aws", "gcp", "azure"], var.cloud)
+    error_message = "cloud must be \"\", \"aws\", \"gcp\", or \"azure\"."
+  }
+}
