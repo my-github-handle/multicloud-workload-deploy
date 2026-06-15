@@ -6,10 +6,26 @@
 
 > Companion documents: [`spec.md`](./spec.md) (requirements & scope) ·
 > [`architecture.md`](./architecture.md) (system shape, layering, satellite model,
-> entry points, repository structure).
+> entry points, repository structure) ·
+> [`architecture/aws.md`](./architecture/aws.md) / [`architecture/gcp.md`](./architecture/gcp.md)
+> (per-cloud building-block realizations) · operations runbooks:
+> [`operations/aws/deploy.md`](./operations/aws/deploy.md),
+> [`operations/gcp/deploy.md`](./operations/gcp/deploy.md).
 
-This document covers the detailed engineering design: module contracts, the operator and
-its workload lifecycle, the layered preflight, rollout strategy, and the testing strategy.
+This document covers the detailed engineering design across **all layers**:
+
+| Layer | Coverage | Section |
+|---|---|---|
+| **Layer 1** — building blocks (`network`, `iam`, `kms`, `secrets`, GCP `project`) | provision-or-BYO module contracts, least-privilege IAM | §1 |
+| **Layer 2** — per-cloud platform (`cluster`, `cluster-resolver`) | hardened private cluster, uniform auth interface | §2 |
+| **Layer 3** — cloud-agnostic Kubernetes (operator, security, observability, connect-agent) | the satellite that runs identically everywhere | §3 |
+| **Layer 4** — composition / entry points (`_agnostic-deploy`, `<cloud>-full`) | how the layers compose into a single apply | §4 |
+| Cross-cutting — preflight, rollout, testing | the staged gate, rollout strategy, test matrix | §5–§7 |
+| **Layer 5** — packaging & release | BOM-versioned artifacts + provenance | §8 |
+
+The per-cloud realization of Layers 1–2 (exact resources, CIDR plans, egress design) lives in
+[`architecture/aws.md`](./architecture/aws.md) and [`architecture/gcp.md`](./architecture/gcp.md);
+this document is the cloud-agnostic contract those pages implement.
 
 ---
 
@@ -18,6 +34,19 @@ its workload lifecycle, the layered preflight, rollout strategy, and the testing
 Each module supports **provision-or-BYO** and exposes a stable output interface. The
 create-vs-lookup branch is isolated in the corresponding resolver
 (see [`architecture.md`](./architecture.md) — Core Conventions).
+
+### 1.0 `project` (GCP only — the account/project container)
+
+GCP's project is the fundamental container (billing link, IAM boundary, the scope service APIs
+are enabled on), so GCP adds a `project` building block ahead of `network`. AWS and Azure have
+no equivalent module — the account/subscription is ambient.
+
+- **Provision:** create a dedicated `google_project` (under an org or folder, linked to a billing
+  account), disable the default permissive network, and enable the required service APIs.
+- **BYO:** resolve an existing customer project and still ensure the required APIs are enabled
+  (the BYOC baseline — customers commonly pre-create the project).
+- **Outputs:** `project_id`, `project_number`, `enabled_services` — consumed by every downstream
+  GCP module, so create-vs-BYO is a single switch.
 
 ### 1.1 `network` (+ egress/firewall)
 
@@ -66,7 +95,7 @@ Design rules:
   identity — same resolver pattern as network/cluster/key.
 - **Asserted by preflight.** Stage 0 checks the deploy identity holds exactly the needed
   permissions (and flags both *missing* and *excess* where detectable); Stage 4 confirms the
-  runtime Workload Identity binding resolves end-to-end. (See §3.)
+  runtime Workload Identity binding resolves end-to-end. (See §5.)
 
 ### 1.3 `kms` (CMK / BYO key)
 
@@ -81,18 +110,58 @@ Design rules:
 
 - Backend wiring (Secrets Manager / Secret Manager / Key Vault) + CSI driver or sync
   mechanism. Secret material **envelope-encrypted with the resolved CMK** (Stage-1 key).
-- **Outputs:** `secrets_ref`, mounting/sync config for the workload.
+- The per-workload Secrets Store CSI `SecretProviderClass` is applied as raw YAML (no plan-time
+  CRD schema discovery), so the module plans offline and the SPC mounts once the CSI driver's CRD
+  is present on the cluster.
+- **Outputs:** `secret_ids`, `secrets_ref` (the SecretProviderClass name the pod mounts).
+
+> **No `iam ↔ secrets` cycle.** The runtime secret grant is scoped at the **backend path/prefix
+> level** (Secrets Manager path prefix / Key Vault id / Secret Manager name prefix via an IAM
+> condition), so `iam` never consumes `secrets`' output ids. This keeps the two modules
+> siblings with no edge, which is also what lets the greenfield root provision them in any order.
 
 ---
 
-## 2. Layer 3 — Cloud-Agnostic Kubernetes Layer
+## 2. Layer 2 — Per-Cloud Platform (`cluster` + `cluster-resolver`)
 
-### 2.1 Operator (`operator/`)
+The platform layer provisions (or resolves) the hardened Kubernetes cluster that Layer 3 deploys
+onto. Like Layer 1 it is provision-or-BYO with the branch isolated in the resolver.
+
+### 2.1 `cluster`
+
+- **Provision:** a **private, hardened** managed cluster — no public node IPs, a private
+  control-plane endpoint, workload-identity enabled, shielded/secure-boot nodes, secrets/disk
+  encryption at rest with the resolved CMK, control-plane audit logging, and a release channel /
+  pinned version. A testing-only toggle exposes the API endpoint to a CIDR allowlist.
+- **CNI is set at creation** (cluster-scoped, see §3.2): EKS ships the VPC CNI (custom-networking
+  mode so pods draw from the secondary CIDR); GKE enables **Dataplane V2 (= Cilium)** so
+  NetworkPolicy is native with no separate install; AKS uses Azure CNI + Cilium dataplane.
+- **BYO:** not created; the resolver looks the cluster up.
+- **Per-cloud detail:** [`architecture/aws.md`](./architecture/aws.md) (EKS + VPC CNI custom
+  networking) · [`architecture/gcp.md`](./architecture/gcp.md) (GKE Dataplane V2).
+
+### 2.2 `cluster-resolver`
+
+- The single create-vs-lookup branch for the cluster. Emits a **uniform `{endpoint, ca, auth}`**
+  interface — identical shape whether the cluster was created or brought — consumed by the root's
+  `kubernetes`/`helm`/`kubectl` providers.
+- `auth` is a **tagged object** so it represents both the exec-plugin/token form (EKS
+  `aws eks get-token`; GKE `gke-gcloud-auth-plugin` / access token) and the client-cert form
+  (AKS local-accounts). The endpoint is scheme-normalized to a single `https://` prefix.
+- Because the providers read these (apply-time-computed on greenfield) outputs, Terraform defers
+  the in-cluster resources until the cluster exists — enabling the **single-apply greenfield**
+  path (§4).
+
+---
+
+## 3. Layer 3 — Cloud-Agnostic Kubernetes Layer
+
+### 3.1 Operator (`operator/`)
 
 - **Build:** Go, Kubebuilder / Operator SDK on `controller-runtime`.
 - **Packaging & install:** the operator ships as `charts/workload-operator` (CRD, controller
   Deployment, RBAC, ServiceMonitor, optional connect-agent). The workload's child objects ship
-  separately as `charts/workload` (see §2.5), so the same child templates are rendered by both
+  separately as `charts/workload` (see §3.5), so the same child templates are rendered by both
   the operator (Tier A) and Terraform (Tier B). Terraform installs the operator chart via the
   `helm` provider (`helm_release` in `k8s-platform`); both charts are standalone
   `helm install`-able for GitOps/manual use. Chart versions are pinned per release.
@@ -108,7 +177,7 @@ Design rules:
   IAM annotations) arrive via the Workload spec / per-cloud values injection.
 - **Scope discipline:** one workload shape; no generic multi-container orchestration.
 
-### 2.2 `k8s-security`
+### 3.2 `k8s-security`
 
 - **Default-deny `NetworkPolicy`** for the workload namespace: pods cannot reach each other,
   the control plane, or the **cloud metadata endpoint (`169.254.169.254`)** — a primary
@@ -126,19 +195,24 @@ Design rules:
 The CNI is a detected capability. In BYO clusters it is cluster-scoped, set at cluster
 creation, and owned by the customer, so it is not swapped.
 
-- **Greenfield (`<cloud>-full`): Cilium is provisioned.** It provides, uniformly across
-  EKS/GKE/AKS, **FQDN-based egress** (`toFQDNs` for the control-plane FQDN + `ghcr.io` + cloud
-  APIs), metadata-IP blocking, L7 visibility, transparent WireGuard encryption, and Hubble
-  flow visibility. This aligns with GKE Dataplane V2.
+- **Greenfield (`<cloud>-full`): Cilium/identity-aware policy where it is native.** On **GKE**,
+  Dataplane V2 **is** Cilium — enabled on the cluster (§2.1), so Cilium + `NetworkPolicy` +
+  Hubble observability are native with **no separate install**. On **EKS**, the VPC CNI owns the
+  datapath; Cilium is an **optional chaining-mode overlay** (default off) that adds `toFQDNs` /
+  Hubble / NetworkPolicy enforcement without owning IPAM. AKS uses the Azure CNI with the Cilium
+  dataplane. The uniform capability across clouds is FQDN-aware egress + identity-aware policy
+  where the dataplane supports it.
 - **BYO: standard Kubernetes `NetworkPolicy` is the portable floor.** Preflight Stage 4
   requires NetworkPolicy support (any conformant CNI); default-deny and metadata-block are
   enforced via plain `NetworkPolicy`. Where the cluster runs Cilium, `toFQDNs`/Hubble are
   layered on. Where it does not, FQDN-granular in-cluster egress is an amber gap, covered at
   the perimeter by the FQDN allowlist in the `network` egress firewall.
 - The cloud edge egress firewall (`network`, §1.1) is the FQDN backstop that holds regardless
-  of CNI; the in-cluster CNI policy is the additional, identity-aware layer.
+  of CNI; the in-cluster CNI policy is the additional, identity-aware layer. The portable
+  Kubernetes `NetworkPolicy` floor (default-deny + metadata block) is enforced by `k8s-security`
+  regardless of CNI, in every path.
 
-### 2.3 `k8s-observability`
+### 3.3 `k8s-observability`
 
 - **Metrics (Prometheus):** operator reconcile health, workload SLOs, HPA/autoscale signals.
 - **Logs (structured, cloud-native sink):** include audit-relevant events — denied egress,
@@ -166,7 +240,7 @@ creation, and owned by the customer, so it is not swapped.
   change's effect on egress posture, error rate, and rollout health is observable —
   tightening the loop between infra change and production behavior.
 
-### 2.4 `connect-agent` (satellite side)
+### 3.4 `connect-agent` (satellite side)
 
 - Outbound mTLS client living in the workload namespace; opens a persistent connection to the
   control-plane FQDN and runs a **pull loop** for desired-state deltas plus a **heartbeat**.
@@ -181,7 +255,7 @@ creation, and owned by the customer, so it is not swapped.
   ([`spec.md`](./spec.md) §5). The satellite-side interface is designed so the transport can be
   slotted in without changing the operator or the security posture.
 
-### 2.5 Install model & namespace-only fallback
+### 3.5 Install model & namespace-only fallback
 
 A CRD is a **cluster-scoped** object: installing or upgrading it requires `create`/`update` on
 `customresourcedefinitions.apiextensions.k8s.io`, which can only come from a ClusterRole. A
@@ -206,7 +280,7 @@ capability tier, selected by Preflight (§3, Stage 4):
   security posture, and remains observable (namespaced ServiceMonitor + cloud flow logs).
 
 The operator is an enhancement over the namespaced-manifest floor — the same portable-floor /
-detected-enhancement model used for the CNI (§2.2) and rollout strategy (§4).
+detected-enhancement model used for the CNI (§3.2) and rollout strategy (§6).
 
 **Shared rendering.** The workload's child objects (Deployment, Service, HPA, PDB,
 NetworkPolicy) are defined once in `charts/workload`, with a single `values.schema.json`. Both
@@ -218,7 +292,45 @@ tiers cannot drift. What differs between tiers is lifecycle ownership, never the
 
 ---
 
-## 3. Layered Preflight (staged validation gate)
+## 4. Layer 4 — Composition & Entry Points
+
+Layer 4 is where the building blocks compose into a deployable whole. The composition roots are
+**consumer-owned scaffolding** (reference compositions documented in `docs/operations` and copied
+into the consumer's IaC repo), not shipped product code — the shipped product is the modules +
+charts. There are two entry shapes; both run the **same Layer 3** and the **same preflight gate**.
+
+### 4.1 `_agnostic-deploy` — BYOC fast path (primary)
+
+- Deploys onto an **existing** cluster; needs only cluster access (kubeconfig), not cloud-admin
+  creds. The `kubernetes`/`helm`/`kubectl` providers are kubeconfig-driven.
+- **One `terraform apply`:** `preflight (0–5) → k8s-platform (operator chart, incl. connect-agent)
+  → k8s-security + k8s-observability → Workload CR`.
+- Walkthrough: [`operations/common/verify-on-kind.md`](./operations/common/verify-on-kind.md).
+
+### 4.2 `<cloud>-full` — greenfield (secondary)
+
+- Provisions the cloud infra (`[project (GCP)] → network → kms → cluster → resolvers → iam →
+  secrets`) **then** runs the identical Layer 3 deploy. Each Layer-1/2 block is independently
+  provision-or-BYO via its mode toggle; mixed BYO (e.g. BYO-VPC, provision the rest) composes the
+  same modules with resolvers in lookup mode.
+- **Single apply.** The in-cluster providers read the cluster-resolver's `{endpoint, ca, auth}`,
+  which are apply-time-computed on a fresh state, so Terraform defers the in-cluster resources
+  until the cluster exists — within the same apply. The preflight kubeconfig is rendered during
+  the apply, and the install tier is fixed to A (a freshly provisioned cluster's deploy identity
+  can create the cluster-scoped CRD + ClusterRole), so the platform/workload counts are
+  plan-known.
+- Per-cloud runbooks + tfvars examples: [`operations/aws/deploy.md`](./operations/aws/deploy.md),
+  [`operations/gcp/deploy.md`](./operations/gcp/deploy.md) (Azure planned).
+
+### 4.3 State
+
+Remote state is **layered** (network / cluster / workload) so a workload change never plans
+against the VPC; backends are cloud-native (S3+DynamoDB, GCS, azurerm). The roots wire the backend;
+the modules are backend-agnostic.
+
+---
+
+## 5. Layered Preflight (staged validation gate)
 
 Runs **bottom-up in dependency order**, mirroring the layer graph. Each stage gates the
 next; failure stops with an **actionable report scoped to that layer**, so a customer never
@@ -252,7 +364,7 @@ Stage 5  Workload readiness     ── final go/no-go for the Workload CR
   default-deny unenforceable → flagged gap); **Cilium detection** (present → enable
   `toFQDNs`/Hubble enhancements; absent → FQDN egress + Hubble flagged as amber gaps, covered
   by the perimeter egress firewall + cloud flow logs); metrics-server present (HPA);
-  **install-tier selection** (§2.5) from the available permissions — cluster-scoped CRD/RBAC
+  **install-tier selection** (§3.5) from the available permissions — cluster-scoped CRD/RBAC
   create → Tier A (operator); namespace-only → Tier B (operator-less namespaced manifests),
   reported as an amber gap; neither (cannot create namespaced workloads) → red, stop;
   PodSecurity admission available; Workload Identity binding wires SA → cloud identity
@@ -294,7 +406,7 @@ Terraform**, not a shell script:
 
 ---
 
-## 4. Rollout Strategy & Argo Rollouts (capability-gated)
+## 6. Rollout Strategy & Argo Rollouts (capability-gated)
 
 Rollout strategy is a **detected capability** — the operator delegates traffic-shifting to
 Argo Rollouts when the cluster supports it and degrades cleanly otherwise.
@@ -323,7 +435,7 @@ it falls under the same shared-responsibility model as the cluster
 
 ---
 
-## 5. Module Boundaries & Testing Strategy
+## 7. Module Boundaries & Testing Strategy
 
 - **Isolation:** every module answers *what it does / how to use it / what it depends on*.
   Resolvers keep cross-module interfaces uniform so internals can change without breaking
@@ -343,9 +455,10 @@ it falls under the same shared-responsibility model as the cluster
   staged-report assembly test.
 - **Security checks:** policy unit tests for default-deny NetworkPolicy and metadata-block;
   PodSecurity admission assertions; assert only the control-plane FQDN is egress-allowed.
-- **CNI / observability gating:** assert greenfield provisions Cilium with `toFQDNs` + Hubble;
-  assert BYO-without-Cilium falls back to the NetworkPolicy floor with FQDN/Hubble reported as
-  amber gaps; assert cloud VPC flow logs are enabled and shipped to the customer-owned sink in
+- **CNI / observability gating:** assert greenfield enables identity-aware policy where native
+  (GKE Dataplane V2; EKS optional Cilium chaining) with `toFQDNs` + Hubble; assert
+  BYO-without-Cilium falls back to the NetworkPolicy floor with FQDN/Hubble reported as amber
+  gaps; assert cloud VPC flow logs are enabled and shipped to the customer-owned sink in
   **every** path (greenfield and BYO), CNI-independent.
 - **Install tiers:** assert Tier A renders the namespace-scoped controller (Role, not
   ClusterRole; cache scoped to the namespace) and that the rendered workload objects match
@@ -359,12 +472,12 @@ it falls under the same shared-responsibility model as the cluster
 
 ---
 
-## 6. Packaging & Release (Layer 5)
+## 8. Packaging & Release (Layer 5)
 
 The product ships as a **single BOM-versioned release**. See [`spec.md`](./spec.md) §3 for the
 requirement; this section is the mechanics.
 
-### 6.1 Artifacts pinned by the BOM
+### 8.1 Artifacts pinned by the BOM
 
 A release `vX.Y.Z` is a Bill of Materials (`release/bom-<version>.yaml`, from
 `release/bom.template.yaml`) that pins three artifacts:
@@ -378,14 +491,14 @@ A release `vX.Y.Z` is a Bill of Materials (`release/bom-<version>.yaml`, from
 The chart `appVersion`, the image tag, and the module tag move in lockstep. The operator chart's
 `image.digest` value lets a production install pin the image immutably (digest wins over tag).
 
-### 6.2 Provenance
+### 8.2 Provenance
 
 - **Signing.** The operator image and both charts are **cosign-signed** (keyless/OIDC by default,
   key-based via `COSIGN_KEY`). Consumers verify with `cosign verify`.
 - **SBOM.** An **SPDX** SBOM is generated from the operator image with `syft` and published
   alongside it, so the dependency inventory is inspectable before install.
 
-### 6.3 Release pipeline
+### 8.3 Release pipeline
 
 `mage release:*` targets, composable or run together as `release:bundle`:
 
@@ -395,7 +508,7 @@ The chart `appVersion`, the image tag, and the module tag move in lockstep. The 
 `cosign`/`syft` are optional on a dev laptop — targets that need them print an install hint and
 skip rather than fail, so the BOM can be assembled for a dry run without them.
 
-### 6.4 Marketplace packaging (future enhancement)
+### 8.4 Marketplace packaging (future enhancement)
 
 Per-cloud marketplace listings sit **on top of** the BOM, not in place of it. Each listing is a
 publish step that: mirrors the BOM's pinned digests into the marketplace's own registry (AWS

@@ -42,9 +42,9 @@ Every path runs the preflight gate first: common/preflight.md.
 
 | Doc | Scope |
 |---|---|
-| [`aws/deploy.md`](./aws/deploy.md) | AWS greenfield (`aws-full`): provision → two-phase apply → verify → BYO variations → day-2 → teardown |
-| [`gcp/deploy.md`](./gcp/deploy.md) | GCP greenfield (`gcp-full`): provision → two-phase apply → verify → BYO variations → day-2 → teardown |
-| `azure/` | Planned — same per-cloud shape as `aws/`. |
+| [`aws/deploy.md`](./aws/deploy.md) | AWS greenfield (`aws-full`): provision → single apply → operating notes → BYO variations → teardown; `aws/examples/` |
+| [`gcp/deploy.md`](./gcp/deploy.md) | GCP greenfield (`gcp-full`): provision → single apply → operating notes → BYO variations → teardown; `gcp/examples/` |
+| `azure/` | Planned — same per-cloud shape as `aws/` and `gcp/`. |
 
 ---
 
@@ -61,8 +61,9 @@ Every path runs the preflight gate first: common/preflight.md.
 The product has two entry shapes (see [`../architecture.md`](../architecture.md) §5):
 
 - **Greenfield** — provision the cloud infra (network, identity, encryption, cluster) *and* deploy,
-  in one Terraform root. Per-cloud, end to end: **[`aws/deploy.md`](./aws/deploy.md)** (GCP/Azure
-  planned). The preflight gate runs automatically and blocks `apply` on a red verdict.
+  in one Terraform root (single apply). Per-cloud, end to end:
+  **[`aws/deploy.md`](./aws/deploy.md)** · **[`gcp/deploy.md`](./gcp/deploy.md)** (Azure planned).
+  The preflight gate runs automatically and blocks `apply` on a red verdict.
 
 - **BYOC** — you already have a cluster; a single `terraform apply` (or staged Helm install) lays
   down the cloud-agnostic Layer-3 deploy. The shared sequence:

@@ -155,25 +155,21 @@ network → kms → iam → secrets → cluster (incl. vpc-cni custom networking
         Layer-3 modules (operator, security, observability, workload) [+ optional Cilium chaining]
 ```
 
-### Two-phase apply
+### Single apply
 
-`aws-full` is a documented **two-phase apply**, not a single `terraform apply`. The
-`kubernetes`/`helm`/`kubectl` providers are configured from `cluster-resolver` outputs
-(endpoint, CA, auth) that do not exist until the EKS cluster is created, and Terraform forbids
-provider configuration that depends on not-yet-created resources.
+`aws-full` provisions everything and deploys the satellite in **one `terraform apply`**. The
+`kubernetes`/`helm`/`kubectl` providers take the cluster endpoint/CA from `cluster-resolver` and
+authenticate with the EKS exec-plugin (`aws eks get-token`); on a fresh state those endpoint/CA
+values are computed, so Terraform defers the in-cluster resources until after the EKS cluster is
+created — within the same apply. The preflight binary's kubeconfig is rendered during the apply,
+and the install tier is fixed to `A` (a freshly provisioned cluster's deploy identity can create
+the cluster-scoped CRD + ClusterRole), so the platform/workload counts are known at plan time.
 
-1. **Phase 1 — cloud infrastructure incl. the cluster.** Provision `network`, `kms`, `iam`,
-   `secrets` (secret creation), `cluster`, and the resolvers.
-2. **Phase 2 — Layer 3.** With the cluster's endpoint/CA/auth known, configure the Kubernetes
-   providers and apply the preflight gate, the Secrets Store CSI `SecretProviderClass`, the agnostic
-   Layer-3 modules, and (optionally) Cilium in chaining mode. The VPC CNI custom networking is part
-   of the cluster (Phase 1), so pods are already on the secondary CIDR before Phase 2.
-
-> The BYOC fast path (`_agnostic-deploy`), which targets an existing cluster, **is** a genuine
-> single `terraform apply` — only greenfield provisioning needs two phases.
-
-Cluster authentication uses the EKS exec-plugin (`aws eks get-token`), so the provider fetches a
-fresh token at apply time rather than persisting one in state.
+The VPC CNI custom networking is part of the cluster, so nodes are `Ready` and pods are on the
+secondary CIDR with no bootstrap gap; the preflight gate, the Secrets Store CSI
+`SecretProviderClass`, the agnostic Layer-3 modules, and (optionally) Cilium chaining all apply in
+the same pass. The exec-plugin auth fetches a fresh token at apply time rather than persisting one
+in state.
 
 ---
 

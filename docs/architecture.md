@@ -50,10 +50,10 @@ never a tangle of `create_*` booleans inside modules.
   asserted by preflight. Policies can't drift from what the code does. Details in
   [`design.md`](./design.md) §1.2.
 - **Resolver pattern.** Each cloud has thin resolvers (`network`, `cluster`, `kms` in BYO
-  mode) that output a uniform interface — `{vpc_id, subnet_ids}`, `{cluster_endpoint, ca,
-  auth}`, `{key_id/arn/resource_id}` — **whether the resource was created or looked up**.
-  The single create-vs-lookup branch lives only in the resolver. Everything downstream
-  receives identical inputs.
+  mode) that output a uniform interface — `{vpc_id, subnet_ids, egress_path_ref}`,
+  `{endpoint, ca, auth}`, `{key_id/arn/resource_id}` — **whether the resource was created or
+  looked up**. The single create-vs-lookup branch lives only in the resolver. Everything
+  downstream receives identical inputs.
 - **BYO = composition, not booleans.** "Bring your own VPC" means the root config does not
   call `network`; it feeds an existing ID into the resolver. BYO-VPC, BYO-cluster, BYO-key
   are independent toggles; a customer can BYO some and have us provision the rest.
@@ -66,12 +66,13 @@ never a tangle of `create_*` booleans inside modules.
 - **Portable floor + detected enhancement.** Where a capability is cluster-scoped and may be
   customer-owned or restricted in BYO, we require a portable floor and treat the richer option
   as a preflight-detected enhancement with a perimeter backstop. This applies to the **CNI**
-  (Cilium provisioned on greenfield; Kubernetes `NetworkPolicy` floor in BYO; cloud egress
-  firewall as the FQDN backstop), to **network observability** (cloud VPC flow logs as the
-  always-on, customer-owned audit floor; Hubble as the Cilium-gated detection layer), and to
-  the **install model** (the operator + cluster-scoped CRD where permitted; plain namespaced
-  manifests as the floor under namespace-only permissions). Details in
-  [`design.md`](./design.md) §2.2–§2.5.
+  (Cilium/identity-aware policy where it runs natively — GKE Dataplane V2 is Cilium, and EKS
+  can add Cilium chaining on top of the VPC CNI; the portable Kubernetes `NetworkPolicy` floor
+  everywhere else; cloud egress firewall as the FQDN backstop), to **network observability**
+  (cloud VPC flow logs as the always-on, customer-owned audit floor; Hubble as the
+  Cilium-gated detection layer), and to the **install model** (the operator + cluster-scoped
+  CRD where permitted; plain namespaced manifests as the floor under namespace-only
+  permissions). Details in [`design.md`](./design.md) §3.2–§3.5.
 
 ---
 
@@ -179,13 +180,24 @@ nothing ever connects *into* the customer environment.
 - **Cloud-agnostic:** pure Kubernetes; needs only cluster access, not full cloud-admin creds.
 - **Outcome:** one `terraform apply` produces a secure, observable, lifecycle-managed
   satellite on the customer's existing GKE/EKS/AKS cluster, enrolled with the control plane.
+- **Walkthrough:** [`operations/common/verify-on-kind.md`](./operations/common/verify-on-kind.md)
+  (generalizes to any existing EKS/GKE/AKS).
 
 ### 5.2 `<cloud>-full` — greenfield fallback (SECONDARY)
 
-- **Flow:** `network → kms → iam → cluster → (resolvers) → identical Layer 3 deploy`.
-- Same building blocks; adds provisioning ahead of the identical agnostic deploy.
+- **Flow:** `[project (GCP)] → network → kms → cluster → (resolvers) → iam → secrets →
+  identical Layer 3 deploy`. Same building blocks; adds provisioning ahead of the identical
+  agnostic deploy. Each Layer-1/2 block is independently provision-or-BYO.
+- **Single apply.** Greenfield is one `terraform apply`: the in-cluster providers
+  (`kubernetes`/`helm`/`kubectl`) read the cluster-resolver's computed endpoint/CA, so
+  Terraform defers the in-cluster resources until after the cluster exists, within the same
+  apply.
 - Preflight runs the same checks, but stages it satisfies *by provisioning* are
-  informational rather than blocking. (See [`design.md`](./design.md) — Preflight.)
+  informational rather than blocking. (See [`design.md`](./design.md) §3.)
+- **Per-cloud runbooks:** AWS [`operations/aws/deploy.md`](./operations/aws/deploy.md) ·
+  GCP [`operations/gcp/deploy.md`](./operations/gcp/deploy.md) (Azure planned). The per-cloud
+  building-block detail is in [`architecture/aws.md`](./architecture/aws.md) and
+  [`architecture/gcp.md`](./architecture/gcp.md).
 
 ---
 

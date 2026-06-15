@@ -1,0 +1,61 @@
+# BYO everything — fully customer-owned VPC, KMS key, IAM role, and EKS cluster.
+# aws-full provisions nothing cloud-side; it only runs preflight (every cloud
+# stage reports amber/not-applicable) and the Layer-3 deploy onto the existing
+# cluster. For this case the BYOC fast path (the _agnostic-deploy root,
+# kubeconfig-driven, no cloud provider) is usually simpler — use aws-full with all
+# modes "byo" only when you want the single composition root.
+#
+# Before the apply, set PREFLIGHT_AWS_PROVISION_CONCERNS="" (explicit empty).
+
+region = "us-east-1"
+name   = "workload"
+azs    = ["us-east-1a", "us-east-1b"]
+
+# Resolve all existing infra.
+network_mode    = "byo"
+byo_vpc_id      = "vpc-0abc123def4567890"
+
+kms_mode        = "byo"
+byo_kms_key_arn = "arn:aws:kms:us-east-1:111122223333:key/abcd1234-..."
+
+iam_mode        = "byo"
+byo_role_arn    = "arn:aws:iam::111122223333:role/workload-runtime"
+
+cluster_mode     = "byo"
+byo_cluster_name = "customer-eks-prod"
+
+preflight_binary = "/path/to/multicloud-workload-deploy/operator/bin/preflight"
+kubeconfig_path  = "/tmp/aws-full.kubeconfig"
+
+namespace                 = "workload-system"
+service_account           = "workload"
+operator_image_repository = "ghcr.io/my-org/workload-operator"
+operator_image_tag        = "0.1.0"
+psa_enforce_level         = "restricted"
+# operator_image_pull_secret = { server = "ghcr.io", username = "...", password = "...", email = "..." }
+
+# The customer owns the edge firewall; egress allowlists do not apply here.
+control_plane_fqdn = "satellite.control.ops.dev"
+
+install_cilium               = false
+observability_enabled        = false
+create_secret_provider_class = true
+
+workload_name = "demo"
+workload_spec_yaml = <<-YAML
+  image: gcr.io/google-samples/hello-app:1.0
+  port: 8080
+  securityContext:
+    runAsUser: 1000
+    runAsNonRoot: true
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    seccompProfile:
+      type: RuntimeDefault
+  autoscale:
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilization: 70
+YAML

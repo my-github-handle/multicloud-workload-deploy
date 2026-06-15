@@ -1,0 +1,58 @@
+# BYO VPC, greenfield everything else. The customer already has a network; we
+# provision KMS + EKS + secrets + identity into it. network-resolver looks up the
+# VPC + subnets by tag (kubernetes.io/role/internal-elb for nodes,
+# kubernetes.io/role/cni for pods). Copy into your aws-full root as
+# terraform.tfvars and edit the placeholders.
+
+region      = "us-east-1"
+name        = "workload"
+azs         = ["us-east-1a", "us-east-1b"]
+k8s_version = "1.34"
+
+# BYO network: resolve the customer's existing VPC.
+network_mode = "byo"
+byo_vpc_id   = "vpc-0abc123def4567890"
+
+# Everything else greenfield.
+kms_mode     = "provision"
+iam_mode     = "provision"
+cluster_mode = "provision"
+
+preflight_binary = "/path/to/multicloud-workload-deploy/operator/bin/preflight"
+kubeconfig_path  = "/tmp/aws-full.kubeconfig"
+
+namespace                 = "workload-system"
+service_account           = "workload"
+operator_image_repository = "ghcr.io/my-org/workload-operator"
+operator_image_tag        = "0.1.0"
+psa_enforce_level         = "restricted"
+# operator_image_pull_secret = { server = "ghcr.io", username = "...", password = "...", email = "..." }
+
+control_plane_fqdn   = "satellite.control.ops.dev"
+egress_allowed_fqdns = ["ghcr.io", "github.com", "pkg-containers.githubusercontent.com"]
+
+install_cilium               = false
+observability_enabled        = false
+create_secret_provider_class = true
+
+# Scope the Stage-0 deploy-permission probe to what we actually provision (export
+# PREFLIGHT_AWS_PROVISION_CONCERNS="kms,secrets,iam,cluster" before the apply).
+
+workload_name = "demo"
+workload_spec_yaml = <<-YAML
+  image: gcr.io/google-samples/hello-app:1.0
+  port: 8080
+  securityContext:
+    runAsUser: 1000
+    runAsNonRoot: true
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    seccompProfile:
+      type: RuntimeDefault
+  autoscale:
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilization: 70
+YAML
