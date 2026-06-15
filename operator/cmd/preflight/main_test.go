@@ -24,10 +24,17 @@ func TestSelectProviderDefaultsToFakeWhenCloudUnset(t *testing.T) {
 	}
 }
 
-func TestSelectProviderRealCloudNotYetImplemented(t *testing.T) {
-	for _, c := range []string{"azure"} {
-		if _, err := selectProvider(c); err == nil {
-			t.Errorf("selectProvider(%q) = nil error, want not-implemented error", c)
+// TestAllRealProvidersImplemented asserts that after the AWS, GCP, and Azure
+// phases all three real cloud providers are wired into selectProvider — there are
+// no remaining unimplemented providers.
+func TestAllRealProvidersImplemented(t *testing.T) {
+	for _, c := range []string{"aws", "gcp", "azure"} {
+		p, err := selectProvider(c)
+		if err != nil {
+			t.Errorf("selectProvider(%q) returned error %v, want a real provider", c, err)
+		}
+		if p == nil {
+			t.Errorf("selectProvider(%q) returned nil provider", c)
 		}
 	}
 }

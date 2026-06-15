@@ -24,6 +24,7 @@ import (
 
 	"github.com/ops-dev/multicloud-workload-deploy/operator/internal/cloud"
 	awsprovider "github.com/ops-dev/multicloud-workload-deploy/operator/internal/cloud/aws"
+	azureprovider "github.com/ops-dev/multicloud-workload-deploy/operator/internal/cloud/azure"
 	"github.com/ops-dev/multicloud-workload-deploy/operator/internal/cloud/fake"
 	gcpprovider "github.com/ops-dev/multicloud-workload-deploy/operator/internal/cloud/gcp"
 	"github.com/ops-dev/multicloud-workload-deploy/operator/internal/preflight"
@@ -155,7 +156,19 @@ func selectProvider(name string) (cloud.PreflightProvider, error) {
 			RouterName:      os.Getenv("PREFLIGHT_GCP_ROUTER_NAME"),
 		})
 	case "azure":
-		return nil, fmt.Errorf("cloud provider %q not yet implemented (deferred to a later phase); omit --cloud to use the fake provider", name)
+		// The real Azure provider. Resolved resource refs (Key Vault URI, key/secret
+		// names, VNet, UAMI principal) are supplied via env so the binary stays
+		// flag-stable; empty values yield resource-not-found checks (red) rather
+		// than a crash.
+		return azureprovider.New(context.Background(), azureprovider.Options{
+			SubscriptionID:  os.Getenv("AZURE_SUBSCRIPTION_ID"),
+			KeyVaultURI:     os.Getenv("PREFLIGHT_AZURE_KEY_VAULT_URI"),
+			KeyName:         os.Getenv("PREFLIGHT_AZURE_KEY_NAME"),
+			KeyVaultID:      os.Getenv("PREFLIGHT_AZURE_KEY_VAULT_ID"),
+			SecretNames:     splitNonEmpty(os.Getenv("PREFLIGHT_AZURE_SECRET_NAMES")),
+			VNetID:          os.Getenv("PREFLIGHT_AZURE_VNET_ID"),
+			UAMIPrincipalID: os.Getenv("PREFLIGHT_AZURE_UAMI_PRINCIPAL_ID"),
+		})
 	default:
 		return nil, fmt.Errorf("unknown --cloud value %q (want aws|gcp|azure or empty)", name)
 	}
