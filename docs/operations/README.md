@@ -15,7 +15,7 @@ Do you already have a Kubernetes cluster?
 ├─ YES → BYOC fast path: a single `terraform apply` of the Layer-3 deploy onto your cluster.
 │         Walkthrough: common/verify-on-kind.md (generalizes to any EKS/GKE/AKS).
 └─ NO  → Greenfield: provision the cluster + network/identity/encryption, then deploy.
-          AWS: aws/deploy.md   ·   GCP/Azure: planned.
+          AWS: aws/deploy.md   ·   GCP: gcp/deploy.md   ·   Azure: planned.
 
 Can the deploy identity create a cluster-scoped CRD + ClusterRole?
 ├─ YES → Tier A (operator): common/workload-operator.md
@@ -43,7 +43,8 @@ Every path runs the preflight gate first: common/preflight.md.
 | Doc | Scope |
 |---|---|
 | [`aws/deploy.md`](./aws/deploy.md) | AWS greenfield (`aws-full`): provision → two-phase apply → verify → BYO variations → day-2 → teardown |
-| `gcp/`, `azure/` | Planned — same per-cloud shape as `aws/`. |
+| [`gcp/deploy.md`](./gcp/deploy.md) | GCP greenfield (`gcp-full`): provision → two-phase apply → verify → BYO variations → day-2 → teardown |
+| `azure/` | Planned — same per-cloud shape as `aws/`. |
 
 ---
 

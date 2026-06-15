@@ -1,0 +1,60 @@
+# BYO everything — fully customer-owned project, network, CryptoKey, identity,
+# and GKE cluster. gcp-full provisions nothing cloud-side; it only runs preflight
+# (every cloud stage reports amber/not-applicable) and the Layer-3 deploy onto the
+# existing cluster. For this case the BYOC fast path (the _agnostic-deploy root,
+# kubeconfig-driven, no cloud provider) is usually simpler — use gcp-full with all
+# modes "byo" only when you want the single composition root.
+
+project_mode = "byo"
+project_id   = "customer-project-id"
+
+region = "us-central1"
+name   = "workload"
+
+# Resolve all existing infra.
+network_mode     = "byo"
+byo_network_name = "customer-vpc"
+byo_subnet_name  = "customer-subnet"
+
+kms_mode       = "byo"
+byo_kms_key_id = "projects/customer-project-id/locations/us-central1/keyRings/customer-ring/cryptoKeys/customer-key"
+
+iam_mode      = "byo"
+byo_gsa_email = "workload@customer-project-id.iam.gserviceaccount.com"
+
+cluster_mode     = "byo"
+byo_cluster_name = "customer-gke-prod"
+
+preflight_binary = "/path/to/multicloud-workload-deploy/operator/bin/preflight"
+kubeconfig_path  = "/tmp/gcp-full.kubeconfig"
+
+namespace                 = "workload-system"
+service_account           = "workload"
+operator_image_repository = "ghcr.io/my-org/workload-operator"
+operator_image_tag        = "0.1.0"
+# operator_image_pull_secret = { server = "ghcr.io", username = "...", password = "...", email = "..." }
+
+# The customer owns the edge firewall; egress allowlists do not apply here.
+control_plane_fqdn = "satellite.control.ops.dev"
+
+observability_enabled        = false
+create_secret_provider_class = true
+
+workload_name = "demo"
+workload_spec_yaml = <<-YAML
+  image: gcr.io/google-samples/hello-app:1.0
+  port: 8080
+  securityContext:
+    runAsUser: 1000
+    runAsNonRoot: true
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    seccompProfile:
+      type: RuntimeDefault
+  autoscale:
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilization: 70
+YAML

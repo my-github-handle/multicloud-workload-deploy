@@ -1,0 +1,91 @@
+# Example terraform.tfvars for the gcp-full greenfield root — single apply.
+# Copy into your gcp-full composition root as terraform.tfvars and edit the
+# placeholders. Do NOT commit real credentials or IDs.
+
+# --- project container (created by Terraform; or set project_mode="byo") ---
+project_mode    = "provision"
+project_id      = "my-gcp-project"
+project_name    = "Workload Platform"
+billing_account = "00X0X0-0X0X0X-0X0X0X"
+# org_id    = "123456789012"   # OR folder_id (mutually exclusive)
+# folder_id = "987654321098"
+
+region = "us-central1"
+name   = "workload"
+# Data-plane CIDRs on the CGNAT block (nodes/pods/services); pods on the largest.
+subnet_cidr   = "100.64.0.0/18"
+pods_cidr     = "100.64.128.0/17"
+services_cidr = "100.64.64.0/19"
+k8s_version   = "1.34"
+
+# All provision by default; flip any to "byo" + supply the byo_* value.
+network_mode = "provision"
+kms_mode     = "provision"
+iam_mode     = "provision"
+cluster_mode = "provision"
+
+# Absolute path to the preflight binary (mage preflightBuild).
+preflight_binary = "/path/to/multicloud-workload-deploy/operator/bin/preflight"
+# Rendered during the apply from the cluster-resolver outputs; just a writable path.
+kubeconfig_path = "/tmp/gcp-full.kubeconfig"
+
+namespace          = "workload-system"
+service_account    = "workload"
+operator_image_repository = "ghcr.io/my-org/workload-operator"
+operator_image_tag        = "0.1.0"
+
+# The operator image is private — supply pull credentials so the root creates a
+# docker-registry secret and wires it onto the operator ServiceAccount.
+# operator_image_pull_secret = {
+#   server   = "ghcr.io"
+#   username = "my-org-bot"
+#   password = "ghp_xxx_read_packages_token"
+#   email    = "ci@example.com"
+# }
+
+control_plane_fqdn   = "satellite.control.ops.dev"
+control_plane_port   = 443
+egress_allowed_fqdns = ["ghcr.io", "github.com", "pkg-containers.githubusercontent.com"]
+# Cloud NGFW cannot wildcard-match the ghcr blob CDN (served from many
+# githubusercontent.com hosts), so allow its published IP range by CIDR.
+egress_allowed_cidrs = ["185.199.108.0/22"]
+
+# In-cluster ServiceMonitor needs the Prometheus operator CRDs; enable only if present.
+observability_enabled = false
+
+# The SecretProviderClass renders in the same apply (the GKE Secret Manager CSI
+# add-on provides the CRD).
+create_secret_provider_class = true
+
+secrets = {
+  # "db-password" = "change-me-then-rotate-out-of-band"
+}
+
+workload_name = "demo"
+# The spec is the WorkloadSpec verbatim (no `name` — that comes from workload_name).
+# Container securityContext must satisfy the namespace's restricted Pod Security
+# Admission (runAsNonRoot + numeric runAsUser, allowPrivilegeEscalation=false,
+# drop ALL caps, RuntimeDefault seccomp), and the image must run as non-root.
+workload_spec_yaml = <<-YAML
+  image: gcr.io/google-samples/hello-app:1.0
+  port: 8080
+  securityContext:
+    runAsUser: 1000
+    runAsNonRoot: true
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    seccompProfile:
+      type: RuntimeDefault
+  autoscale:
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilization: 70
+  livenessProbe:
+    path: /
+    port: 8080
+  readinessProbe:
+    path: /
+    port: 8080
+YAML
