@@ -25,6 +25,7 @@ import (
 	"github.com/ops-dev/multicloud-workload-deploy/operator/internal/cloud"
 	awsprovider "github.com/ops-dev/multicloud-workload-deploy/operator/internal/cloud/aws"
 	"github.com/ops-dev/multicloud-workload-deploy/operator/internal/cloud/fake"
+	gcpprovider "github.com/ops-dev/multicloud-workload-deploy/operator/internal/cloud/gcp"
 	"github.com/ops-dev/multicloud-workload-deploy/operator/internal/preflight"
 )
 
@@ -141,8 +142,20 @@ func selectProvider(name string) (cloud.PreflightProvider, error) {
 			// Scopes the Stage-0 deploy-permission probe to only what we create.
 			ProvisionConcerns: splitNonEmpty(os.Getenv("PREFLIGHT_AWS_PROVISION_CONCERNS")),
 		})
-	case "gcp", "azure":
-		return nil, fmt.Errorf("cloud provider %q not yet implemented; omit --cloud to use the fake provider", name)
+	case "gcp":
+		// The real GCP provider. Resolved resource refs (CryptoKey, secret ids,
+		// network, router) are supplied via env so the binary stays flag-stable;
+		// empty values yield resource-not-found checks (red) rather than a crash.
+		return gcpprovider.New(context.Background(), gcpprovider.Options{
+			ProjectID:       os.Getenv("PREFLIGHT_GCP_PROJECT_ID"),
+			Region:          os.Getenv("PREFLIGHT_GCP_REGION"),
+			KMSKeyID:        os.Getenv("PREFLIGHT_GCP_KMS_KEY_ID"),
+			SecretIDs:       splitNonEmpty(os.Getenv("PREFLIGHT_GCP_SECRET_IDS")),
+			NetworkSelfLink: os.Getenv("PREFLIGHT_GCP_NETWORK_SELF_LINK"),
+			RouterName:      os.Getenv("PREFLIGHT_GCP_ROUTER_NAME"),
+		})
+	case "azure":
+		return nil, fmt.Errorf("cloud provider %q not yet implemented (deferred to a later phase); omit --cloud to use the fake provider", name)
 	default:
 		return nil, fmt.Errorf("unknown --cloud value %q (want aws|gcp|azure or empty)", name)
 	}
