@@ -15,7 +15,7 @@ Do you already have a Kubernetes cluster?
 ├─ YES → BYOC fast path: a single `terraform apply` of the Layer-3 deploy onto your cluster.
 │         Walkthrough: common/verify-on-kind.md (generalizes to any EKS/GKE/AKS).
 └─ NO  → Greenfield: provision the cluster + network/identity/encryption, then deploy.
-          AWS: aws/deploy.md   ·   GCP: gcp/deploy.md   ·   Azure: planned.
+          AWS: aws/deploy.md   ·   GCP: gcp/deploy.md   ·   Azure: azure/deploy.md.
 
 Can the deploy identity create a cluster-scoped CRD + ClusterRole?
 ├─ YES → Tier A (operator): common/workload-operator.md
@@ -44,7 +44,7 @@ Every path runs the preflight gate first: common/preflight.md.
 |---|---|
 | [`aws/deploy.md`](./aws/deploy.md) | AWS greenfield (`aws-full`): provision → single apply → operating notes → BYO variations → teardown; `aws/examples/` |
 | [`gcp/deploy.md`](./gcp/deploy.md) | GCP greenfield (`gcp-full`): provision → single apply → operating notes → BYO variations → teardown; `gcp/examples/` |
-| `azure/` | Planned — same per-cloud shape as `aws/` and `gcp/`. |
+| [`azure/deploy.md`](./azure/deploy.md) | Azure greenfield (`azure-full`): provision → single apply → operating notes → BYO variations → teardown; `azure/examples/` |
 
 ---
 
@@ -62,8 +62,9 @@ The product has two entry shapes (see [`../architecture.md`](../architecture.md)
 
 - **Greenfield** — provision the cloud infra (network, identity, encryption, cluster) *and* deploy,
   in one Terraform root (single apply). Per-cloud, end to end:
-  **[`aws/deploy.md`](./aws/deploy.md)** · **[`gcp/deploy.md`](./gcp/deploy.md)** (Azure planned).
-  The preflight gate runs automatically and blocks `apply` on a red verdict.
+  **[`aws/deploy.md`](./aws/deploy.md)** · **[`gcp/deploy.md`](./gcp/deploy.md)** ·
+  **[`azure/deploy.md`](./azure/deploy.md)**. The preflight gate runs automatically and blocks
+  `apply` on a red verdict.
 
 - **BYOC** — you already have a cluster; a single `terraform apply` (or staged Helm install) lays
   down the cloud-agnostic Layer-3 deploy. The shared sequence:
