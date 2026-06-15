@@ -1,6 +1,6 @@
 # workload-operator
 
-![Version: 0.1.0](https://img.shields.io/badge/Version-0.1.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.0](https://img.shields.io/badge/AppVersion-0.1.0-informational?style=flat-square)
+![Version: 0.2.0](https://img.shields.io/badge/Version-0.2.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.2.0](https://img.shields.io/badge/AppVersion-0.2.0-informational?style=flat-square)
 
 Installs the Workload CRD, controller, and namespace-scoped RBAC (Tier A).
 
@@ -10,7 +10,9 @@ Installs the Workload CRD, controller, and namespace-scoped RBAC (Tier A).
 |-----|------|---------|-------------|
 | namespace | string | `"workload-system"` |  |
 | image.repository | string | `"ghcr.io/ops-dev/workload-operator"` |  |
-| image.tag | string | `"0.1.0"` |  |
+| image.tag | string | `""` |  |
+| image.digest | string | `""` |  |
+| image.pullPolicy | string | `"IfNotPresent"` |  |
 | imagePullSecrets | list | `[]` |  |
 | serviceAccount.name | string | `"workload-operator"` |  |
 | watchNamespace | string | `""` |  |

@@ -1,7 +1,11 @@
 namespace: workload-system
+# The operator image. tag defaults to the chart's appVersion (kept in lockstep by the release
+# BOM); pin by digest in production via image.digest.
 image:
   repository: ghcr.io/ops-dev/workload-operator
-  tag: "0.1.0"
+  tag: ""        # empty → uses .Chart.AppVersion
+  digest: ""     # optional sha256:… ; when set, overrides tag (immutable, marketplace-grade)
+  pullPolicy: IfNotPresent
 # Names of pre-created docker-registry secrets in the install namespace, used to pull the
 # operator image from a private registry. Leave empty for public images.
 imagePullSecrets: []
