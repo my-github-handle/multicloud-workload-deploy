@@ -63,3 +63,15 @@ variable "wait_timeout" {
   type        = string
   default     = "5m"
 }
+
+variable "crd_ready" {
+  description = "Ordering handle: the k8s-platform crd_established id (Tier A). Referencing it makes the Workload CR apply only after the Workload CRD is Established, removing the CRD-vs-CR race without a root-level depends_on."
+  type        = string
+  default     = ""
+}
+
+variable "secrets_ready" {
+  description = "Ordering handle: a value derived from the secret material (e.g. joined secret ids). Referencing it makes the Workload apply only after the secrets exist, so a pod mounting them via the CSI SecretProviderClass does not start before the material is present."
+  type        = string
+  default     = ""
+}
