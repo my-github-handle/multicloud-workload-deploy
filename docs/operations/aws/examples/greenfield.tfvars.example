@@ -27,7 +27,10 @@ namespace                 = "workload-system"
 service_account           = "workload"
 operator_image_repository = "ghcr.io/my-org/workload-operator"
 operator_image_tag        = "0.1.0"
-psa_enforce_level         = "restricted"
+# The sre-interview image runs as root with a writable rootfs, so "restricted"
+# (which forbids root) would reject it. "baseline" still blocks privileged /
+# hostNamespace / hostPath. Use "restricted" for non-root images.
+psa_enforce_level = "baseline"
 
 # The operator image is private — supply pull credentials so the root creates a
 # docker-registry secret and wires it onto the operator ServiceAccount.
@@ -55,17 +58,19 @@ secrets = {
   # "db-password" = "change-me-then-rotate-out-of-band"
 }
 
+# The sre-interview workload: HTTP app on :8080, internal/metrics on :9090.
 workload_name = "demo"
-# The spec is the WorkloadSpec verbatim (no `name` — that comes from workload_name).
-# Container securityContext must satisfy the namespace's restricted Pod Security
-# Admission, and the image must run as non-root.
+# WorkloadSpec verbatim (no `name` — that comes from workload_name). This image
+# runs as root with a writable rootfs, so the hardened chart defaults (runAsNonRoot
+# + readOnlyRootFilesystem) are overridden; drop ALL caps + RuntimeDefault seccomp
+# are kept. The operator wires the Service to :8080.
 workload_spec_yaml = <<-YAML
-  image: gcr.io/google-samples/hello-app:1.0
+  image: ghcr.io/e2b-dev/sre-interview:latest
   port: 8080
   securityContext:
-    runAsUser: 1000
-    runAsNonRoot: true
+    runAsNonRoot: false
     allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: false
     capabilities:
       drop:
         - ALL

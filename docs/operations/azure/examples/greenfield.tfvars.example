@@ -47,29 +47,46 @@ egress_allowed_fqdns = ["ghcr.io", "github.com", "pkg-containers.githubuserconte
 # In-cluster ServiceMonitor needs the Prometheus operator CRDs; enable only if present.
 observability_enabled = false
 
+# The sre-interview image runs as root and writes to its filesystem, so the
+# restricted Pod Security Admission level would reject it. Relax the workload
+# namespace to "baseline" (still blocks privileged/hostNamespace/hostPath) and
+# give the container a root-compatible securityContext below. Use "restricted"
+# only for images that run as a non-root user.
+psa_enforce_level = "baseline"
+
 secrets = {
   # "db-password" = "change-me-then-rotate-out-of-band"
 }
 
+# The sre-interview workload: HTTP app on :8080, internal/metrics on :9090.
 workload_name = "demo"
-workload_port = 80
-# WorkloadSpec verbatim (no `name` — that comes from workload_name). The container
-# securityContext must satisfy the namespace's restricted Pod Security Admission
-# (runAsNonRoot + numeric runAsUser, allowPrivilegeEscalation=false, drop ALL
-# caps, RuntimeDefault seccomp) and the image must run as non-root.
+workload_port = 8080
+# WorkloadSpec verbatim (no `name` — that comes from workload_name). This image
+# runs as root with a writable rootfs, so the hardened chart defaults (runAsNonRoot
+# + readOnlyRootFilesystem) are overridden here; drop ALL caps + RuntimeDefault
+# seccomp are kept. Probe the app port; the operator wires the Service to :8080.
 workload_spec_yaml = <<-YAML
-  image: nginx:1.27
-  port: 80
+  image: ghcr.io/e2b-dev/sre-interview:latest
+  port: 8080
+  securityContext:
+    runAsNonRoot: false
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: false
+    capabilities:
+      drop:
+        - ALL
+    seccompProfile:
+      type: RuntimeDefault
   autoscale:
     minReplicas: 2
     maxReplicas: 5
     targetCPUUtilization: 70
   livenessProbe:
     path: /
-    port: 80
+    port: 8080
   readinessProbe:
     path: /
-    port: 80
+    port: 8080
 YAML
 
 # Testing only: expose the API server publicly to a single IP (nodes egress via
