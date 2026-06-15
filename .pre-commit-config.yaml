@@ -77,7 +77,12 @@ repos:
           - --args=--config=__GIT_WORKING_DIR__/.tflint.hcl
       # trivy is the supported successor to tfsec for IaC security scanning (tfsec is deprecated
       # and its older parser rejects Terraform `check` blocks).
+      # Skip .terraform/: downloaded community modules vendor example manifests
+      # (e.g. the GKE module's wordpress-bundle.yaml) that are not our code and
+      # would otherwise fail the scan. Our own HCL is still fully scanned.
       - id: terraform_trivy
+        args:
+          - --args=--skip-dirs=**/.terraform/**
       - id: terraform_docs
         # Inject into the README of every dir that has one (config in .terraform-docs.yml).
         args:
