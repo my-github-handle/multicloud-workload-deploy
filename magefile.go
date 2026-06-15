@@ -39,6 +39,7 @@ var (
 		"github.com/ops-dev/multicloud-workload-deploy/operator/internal/render," +
 		"github.com/ops-dev/multicloud-workload-deploy/operator/internal/preflight," +
 		"github.com/ops-dev/multicloud-workload-deploy/operator/internal/cloud/fake," +
+		"github.com/ops-dev/multicloud-workload-deploy/operator/internal/cloud/aws," +
 		"github.com/ops-dev/multicloud-workload-deploy/operator/cmd/preflight"
 )
 
@@ -128,6 +129,30 @@ func CoverageGate() error {
 // No coverage gate — these assert live behavior, not statement coverage.
 func TestE2E() error {
 	return sh.RunV("go", "test", "-tags", "e2e", "./test/e2e/...", "-v", "-count=1", "-timeout", "15m")
+}
+
+// TestE2EAWS runs the AWS greenfield real-world test: it drives the live/aws-full
+// two-phase Terraform apply against a real AWS account (default profile
+// c3.test.aws), asserts the satellite came up, and tears down. Build-tagged
+// e2e_aws and gated on E2E_AWS=true, because it provisions a private EKS cluster +
+// Network Firewall + NAT (~20-30 min, real cost). Build the preflight binary and
+// create live/aws-full/terraform.tfvars first; see docs/operations/aws/deploy.md.
+func TestE2EAWS() error {
+	mg.Deps(PreflightBuild)
+	return sh.RunV("go", "test", "-tags", "e2e_aws", "./test/e2e/...",
+		"-run", "TestAWSFullGreenfield", "-v", "-count=1", "-timeout", "75m")
+}
+
+// TestE2EAWSNoEKS runs the no-EKS building-blocks test: it applies network + kms +
+// iam + secrets (no cluster) against a real account (default profile c3.test.aws),
+// asserts the module outputs + the preflight binary's AWS cloud stages against the
+// live resources, then destroys. Build-tagged e2e_aws and gated on
+// E2E_AWS_NOEKS=true. A few $ for NAT + Network Firewall, ~5-8 min. Build the
+// preflight binary first (mage preflightBuild).
+func TestE2EAWSNoEKS() error {
+	mg.Deps(PreflightBuild)
+	return sh.RunV("go", "test", "-tags", "e2e_aws", "./test/e2e/...",
+		"-run", "TestAWSNoEKS", "-v", "-count=1", "-timeout", "40m")
 }
 
 // LintCharts lints both Helm charts.

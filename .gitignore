@@ -23,5 +23,20 @@ charts/**/charts/
 .DS_Store
 *.swp
 mage_output_file.go
+
+# Graphviz/diagram render byproducts (the committed .png is the artifact)
+docs/architecture/diagrams/core
+*.dot
+
+# IAM policy artifacts are rendered at apply time (the .tf is the source of truth)
+modules/aws/iam/artifacts/
 # Terraform module lock files (modules don't pin; only root configs do)
 modules/**/.terraform.lock.hcl
+
+# Ephemeral standalone-EKS validation root (live resource IDs; not product code)
+
+# Release build artifacts (packaged charts, SBOMs)
+dist/
+
+# Composition roots are consumer-owned scaffolding (reference compositions live in docs).
+live/
