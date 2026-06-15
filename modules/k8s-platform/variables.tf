@@ -36,6 +36,12 @@ variable "create_namespace" {
   default     = true
 }
 
+variable "image_pull_secret_name" {
+  description = "Name of an existing docker-registry Secret in the namespace for pulling a private operator image (set on the operator ServiceAccount via the chart's imagePullSecrets). Empty for a public image."
+  type        = string
+  default     = ""
+}
+
 variable "kubeconfig_path" {
   description = "Path to the kubeconfig, used by the CRD-Established wait (Tier A). Must match the providers' kubeconfig."
   type        = string
@@ -57,10 +63,4 @@ variable "crd_wait_timeout" {
   description = "Timeout for the `kubectl wait --for=condition=established` gate on the Workload CRD (Tier A)."
   type        = string
   default     = "120s"
-}
-
-variable "image_pull_secret_name" {
-  description = "Name of a Kubernetes docker-registry secret in the operator namespace used to pull the (private) operator image. Empty when the image needs no pull secret. The greenfield/root composition creates the secret and passes its name here."
-  type        = string
-  default     = ""
 }
