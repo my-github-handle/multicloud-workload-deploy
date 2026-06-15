@@ -5,13 +5,22 @@
 # The hard gate is the postcondition below. The data source is read at plan time, before any
 # resource is created, and every downstream value derives from its result — so a red verdict fails
 # the plan on the critical path. result is plan-time-known, so install_tier can drive `count`.
+locals {
+  # The binary invocation. --cloud is appended only when set (agnostic/BYOC leaves
+  # it empty for the fake provider; aws-full passes "aws").
+  preflight_args = concat(
+    [
+      var.preflight_binary,
+      "--mode=${var.mode}",
+      "--kubeconfig", var.kubeconfig_path,
+      "--namespace", var.namespace,
+    ],
+    var.cloud != "" ? ["--cloud=${var.cloud}"] : [],
+  )
+}
+
 data "external" "preflight" {
-  program = [
-    var.preflight_binary,
-    "--mode=agnostic",
-    "--kubeconfig", var.kubeconfig_path,
-    "--namespace", var.namespace,
-  ]
+  program = local.preflight_args
 
   lifecycle {
     postcondition {

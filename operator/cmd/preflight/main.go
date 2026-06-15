@@ -15,6 +15,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	apiextclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	"k8s.io/client-go/kubernetes"
@@ -22,6 +23,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 
 	"github.com/ops-dev/multicloud-workload-deploy/operator/internal/cloud"
+	awsprovider "github.com/ops-dev/multicloud-workload-deploy/operator/internal/cloud/aws"
 	"github.com/ops-dev/multicloud-workload-deploy/operator/internal/cloud/fake"
 	"github.com/ops-dev/multicloud-workload-deploy/operator/internal/preflight"
 )
@@ -121,11 +123,43 @@ func selectProvider(name string) (cloud.PreflightProvider, error) {
 	switch name {
 	case "":
 		return &fake.Provider{}, nil
-	case "aws", "gcp", "azure":
+	case "aws":
+		// The real AWS provider. Resolved resource references (KMS key, secret
+		// ARNs, VPC, egress path) are supplied via env so the binary stays
+		// flag-stable; empty values yield resource-not-found checks (red) rather
+		// than a crash.
+		return awsprovider.New(context.Background(), awsprovider.Options{
+			Region:              os.Getenv("AWS_REGION"),
+			KMSKeyARN:           os.Getenv("PREFLIGHT_AWS_KMS_KEY_ARN"),
+			SecretARNs:          splitNonEmpty(os.Getenv("PREFLIGHT_AWS_SECRET_ARNS")),
+			VPCID:               os.Getenv("PREFLIGHT_AWS_VPC_ID"),
+			EgressPathRef:       os.Getenv("PREFLIGHT_AWS_EGRESS_PATH_REF"),
+			ControlPlaneFQDN:    os.Getenv("PREFLIGHT_AWS_CONTROL_PLANE_FQDN"),
+			RequiredEgressFQDNs: splitNonEmpty(os.Getenv("PREFLIGHT_AWS_REQUIRED_EGRESS_FQDNS")),
+			DeployPrincipalARN:  os.Getenv("PREFLIGHT_AWS_DEPLOY_PRINCIPAL_ARN"),
+			// Which concerns are being provisioned (vs BYO); empty = all (greenfield).
+			// Scopes the Stage-0 deploy-permission probe to only what we create.
+			ProvisionConcerns: splitNonEmpty(os.Getenv("PREFLIGHT_AWS_PROVISION_CONCERNS")),
+		})
+	case "gcp", "azure":
 		return nil, fmt.Errorf("cloud provider %q not yet implemented; omit --cloud to use the fake provider", name)
 	default:
 		return nil, fmt.Errorf("unknown --cloud value %q (want aws|gcp|azure or empty)", name)
 	}
+}
+
+// splitNonEmpty splits a comma-separated env value, dropping empty entries.
+func splitNonEmpty(s string) []string {
+	if s == "" {
+		return nil
+	}
+	var out []string
+	for _, part := range strings.Split(s, ",") {
+		if p := strings.TrimSpace(part); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // emit serializes the report into the flat string→string object the external provider requires:

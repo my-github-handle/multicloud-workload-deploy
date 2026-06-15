@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/ops-dev/multicloud-workload-deploy/operator/internal/cloud"
+	awsprovider "github.com/ops-dev/multicloud-workload-deploy/operator/internal/cloud/aws"
 	"github.com/ops-dev/multicloud-workload-deploy/operator/internal/cloud/fake"
 	"github.com/ops-dev/multicloud-workload-deploy/operator/internal/preflight"
 )
@@ -23,9 +24,46 @@ func TestSelectProviderDefaultsToFakeWhenCloudUnset(t *testing.T) {
 }
 
 func TestSelectProviderRealCloudNotYetImplemented(t *testing.T) {
-	for _, c := range []string{"aws", "gcp", "azure"} {
+	for _, c := range []string{"gcp", "azure"} {
 		if _, err := selectProvider(c); err == nil {
 			t.Errorf("selectProvider(%q) = nil error, want not-implemented error", c)
+		}
+	}
+}
+
+// TestSelectProviderAWSReturnsRealProvider asserts the real AWS provider is wired
+// (it previously returned a not-implemented error).
+func TestSelectProviderAWSReturnsRealProvider(t *testing.T) {
+	p, err := selectProvider("aws")
+	if err != nil {
+		t.Fatalf("selectProvider(\"aws\") returned error: %v", err)
+	}
+	if _, ok := p.(*awsprovider.Provider); !ok {
+		t.Fatalf("expected *aws.Provider, got %T", p)
+	}
+}
+
+func TestSplitNonEmpty(t *testing.T) {
+	cases := []struct {
+		in   string
+		want []string
+	}{
+		{"", nil},
+		{"a", []string{"a"}},
+		{"a,b,c", []string{"a", "b", "c"}},
+		{" a , b ,, c ", []string{"a", "b", "c"}}, // trims spaces, drops empties
+		{",,", nil},
+	}
+	for _, c := range cases {
+		got := splitNonEmpty(c.in)
+		if len(got) != len(c.want) {
+			t.Errorf("splitNonEmpty(%q) = %v, want %v", c.in, got, c.want)
+			continue
+		}
+		for i := range got {
+			if got[i] != c.want[i] {
+				t.Errorf("splitNonEmpty(%q)[%d] = %q, want %q", c.in, i, got[i], c.want[i])
+			}
 		}
 	}
 }
