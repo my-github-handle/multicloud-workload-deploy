@@ -4,8 +4,8 @@ Deploy a workload with **no operator and no CRD** — `charts/workload` installe
 Helm. This is the operator-less floor: it runs under namespace-only permissions where a
 cluster-scoped CRD cannot be created.
 
-> Project guide: [`README.md`](./README.md) · Operator (Tier A): [`workload-operator.md`](./workload-operator.md)
-> · Design: [`../components/workload-operator.md`](../components/workload-operator.md) §6 Install model.
+> Project guide: [`README.md`](../README.md) · Operator (Tier A): [`workload-operator.md`](./workload-operator.md)
+> · Design: [`../components/workload-operator.md`](../../components/workload-operator.md) §6 Install model.
 
 ---
 

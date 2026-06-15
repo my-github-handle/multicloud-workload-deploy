@@ -5,7 +5,8 @@
 **Version:** 1.0
 
 > Companion documents: [`spec.md`](./spec.md) (requirements & scope) ·
-> [`design.md`](./design.md) (detailed engineering design).
+> [`design.md`](./design.md) (detailed engineering design) ·
+> [`architecture/aws.md`](./architecture/aws.md) (AWS building blocks & `aws-full` greenfield).
 
 ---
 
@@ -16,8 +17,10 @@ stated. BYO is a **composition choice** (don't call the provisioning module; pas
 never a tangle of `create_*` booleans inside modules.
 
 ```
-┌─ Layer 5: Marketplace packaging (future enhancement) ─────────┐
-│  AWS / GCP / Azure marketplace listing artifacts + entitlement │
+┌─ Layer 5: Packaging & distribution ───────────────────────────┐
+│  Marketplace packaging (future enhancement)                    │
+│    └─ built on: BOM-versioned release (operator image +        │
+│       charts + TF modules), cosign-signed, SBOM (§7)           │
 ├─ Layer 4: Composition (root configs / "live" envs) ───────────┤
 │  Entry points:  _agnostic-deploy (BYOC fast path)             │
 │                 <cloud>-full (greenfield fallback)            │
@@ -230,13 +233,13 @@ modules/
   preflight/            # TF module: invokes the checker binary (external data source),
                         #   gates apply via precondition/check, emits green/amber/red report
 
-live/                   # Layer 4 composition = customer-facing entry points
-  _agnostic-deploy/     # ★ BYOC fast path — Layer 3 + preflight, any existing cluster
-  aws-full/             # greenfield: network → kms → iam → cluster → Layer 3
-  gcp-full/
-  azure-full/
-  # BYO permutations (network/cluster/key brought in, rest provisioned) compose the
-  # same modules with resolvers in lookup mode — no separate module variants needed.
+# Layer 4 composition = customer-facing entry points. These are CONSUMER-OWNED
+# composition roots (not shipped product code): reference compositions are
+# documented in docs/operations and copied into the consumer's own IaC repo.
+#   _agnostic-deploy   ★ BYOC fast path — Layer 3 + preflight, any existing cluster
+#   <cloud>-full       greenfield: network → kms → iam → cluster → Layer 3
+# BYO permutations (network/cluster/key brought in, rest provisioned) compose the
+# same modules with resolvers in lookup mode — no separate module variants needed.
 
 operator/               # Go package tree (Kubebuilder/controller-runtime) — NOT a separate
                         #   module. The single Go module is rooted at the REPOSITORY ROOT
@@ -259,6 +262,8 @@ charts/
                         #   HPA, PDB, NetworkPolicy) — single source rendered by BOTH the
                         #   operator (Tier A) and Terraform (Tier B). One values.schema.json.
 
+release/                # Layer 5: BOM template + (generated) per-release bom-<version>.yaml.
+                        #   `mage release:*` builds/signs the artifacts and assembles the BOM.
 marketplace/            # Layer 5 (future enhancement): per-cloud listing + entitlement artifacts
   aws/                  # AWS Marketplace listing + entitlement wiring
   gcp/                  # GCP Marketplace listing + entitlement wiring
@@ -266,3 +271,19 @@ marketplace/            # Layer 5 (future enhancement): per-cloud listing + enti
 
 docs/                   # spec, architecture, design, runbooks, SE playbook
 ```
+
+---
+
+## 7. Packaging & Distribution (Layer 5)
+
+The product is delivered as a **single BOM-versioned release** — see [`spec.md`](./spec.md) §3 for
+the requirement and [`design.md`](./design.md) §6 for the mechanics. The shape:
+
+- **Three artifacts, one version.** A release `vX.Y.Z` pins the operator **OCI image** (by digest),
+  the two **Helm charts** (OCI), and the **Terraform module set** (git tag). The chart `appVersion`,
+  image tag, and module tag move in lockstep; the chart honors `image.digest` for immutable pins.
+- **Provenance.** Image + charts are **cosign-signed** and shipped with an **SBOM** (SPDX), so the
+  bundle is verifiable and marketplace-grade.
+- **The BOM is cloud-neutral.** Per-cloud marketplace listings (a future enhancement) are a publish
+  step that mirrors the BOM's pinned digests into each cloud's registry and adds the cloud's
+  entitlement/metering call — they consume the BOM, they don't replace it.

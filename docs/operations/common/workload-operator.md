@@ -1,7 +1,7 @@
 # Operating the Workload Operator
 
 Component operations for the cloud-agnostic core. For the project-wide guide see
-[`README.md`](./README.md); for design see [`../components/workload-operator.md`](../components/workload-operator.md).
+[`README.md`](../README.md); for design see [`../components/workload-operator.md`](../../components/workload-operator.md).
 
 ---
 
@@ -36,7 +36,7 @@ helm upgrade op charts/workload-operator -n workload-system --reuse-values --set
 Create / update / inspect:
 
 ```bash
-kubectl apply -f docs/operations/examples/workload-basic.yaml
+kubectl apply -f docs/operations/common/examples/workload-basic.yaml
 kubectl -n <ns> edit workload <name>
 kubectl -n <ns> get workload <name> -o yaml
 ```

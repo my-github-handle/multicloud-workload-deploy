@@ -9,7 +9,7 @@ deferred. Kubernetes stages 4–5 implemented for real.)
 > [`../spec.md`](../spec.md) (§2 — "no deployment proceeds silently when a prerequisite is unmet").
 >
 > Related component: [`workload-operator.md`](./workload-operator.md). Operations:
-> [`../operations/preflight.md`](../operations/preflight.md).
+> [`../operations/common/preflight.md`](../operations/common/preflight.md).
 
 ---
 

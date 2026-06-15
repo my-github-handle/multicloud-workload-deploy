@@ -4,8 +4,8 @@ The preflight checker validates deploy prerequisites bottom-up and emits a green
 The Terraform deploy paths run it automatically and gate `apply` on the verdict; you can also run
 it standalone to diagnose a cluster before deploying.
 
-> Project guide: [`README.md`](./README.md) · Design:
-> [`../components/preflight-checker.md`](../components/preflight-checker.md).
+> Project guide: [`README.md`](../README.md) · Design:
+> [`../components/preflight-checker.md`](../../components/preflight-checker.md).
 
 ---
 
@@ -160,3 +160,49 @@ keys on `verdict`.
 - **full** (greenfield `<cloud>-full`): the cloud stages (0–3) are provisioned by the same apply,
   so they're informational — they still run and report their true severity, but a red there does
   not block and does not skip the Kubernetes stages. A red in a Kubernetes stage still blocks.
+
+---
+
+## Cloud-specific stages and when they apply
+
+Stages 0–3 are the **cloud-facing** stages, run by the per-cloud provider selected with `--cloud`
+(e.g. `--cloud=aws`); with no `--cloud` a fake provider runs and these stages are inert. Stages 4–5
+are **cloud-agnostic** and always run against the target cluster.
+
+| Stage | ID | Checks | Applies when |
+|---|---|---|---|
+| Identity | 0 | deploy identity can **provision** the in-scope concerns | something is being provisioned |
+| KMS | 1 | resolved CMK exists, enabled, rotating | a CMK is configured (we envelope-encrypt) |
+| Secrets | 2 | secret is CMK-encrypted | secrets are configured |
+| Egress/network | 3 | VPC available, NAT, firewall-in-path, metadata-block, FQDN reachability | a VPC is configured |
+| Kubernetes | 4 | cluster reachable, install tier, NetworkPolicy/PSA, metrics-server, CNI | **always** (the deploy target) |
+| Workload | 5 | namespace, ServiceAccount/identity binding, workload readiness | **always** |
+
+**A cloud stage is not-applicable, not a failure, when its concern is BYO.** Each cloud stage
+self-gates: if the thing it would check isn't in play, it reports **amber (informational)** rather
+than red.
+
+- **Identity (0)** simulates only the create-actions for the concerns being **provisioned**. If
+  every concern is BYO (nothing provisioned), it reports amber — there's no provisioning
+  permission to require. Scope is passed via `PREFLIGHT_AWS_PROVISION_CONCERNS` (comma-separated
+  subset of `kms,secrets,iam,cluster`; empty = all = greenfield).
+- **KMS (1)** reports amber when no CMK ARN is configured (nothing is encrypted by us).
+- **Secrets (2)** reports amber when no secrets are configured.
+- **Egress (3)** reports amber for `egress.vpc` when no VPC is configured, and `egress.firewall_inpath`
+  is amber when the customer owns the edge (no `egress_path_ref`) — a shared-responsibility item we
+  cannot assert.
+
+### What this means for a BYO cluster
+
+When the customer **brings the cluster** (and possibly the network/key/identity too), the
+load-bearing checks shift from "can we provision cloud infra?" to "can we deploy onto what
+exists?":
+
+- The **BYOC fast path (`_agnostic-deploy`)** runs **no** `--cloud` provider at all — stages 0–3 are
+  inert, and the gate is entirely **stages 4–5** plus the shared-responsibility contract.
+- The greenfield `aws-full` path with **BYO toggles** runs `--cloud=aws` but the cloud stages
+  degrade to amber per BYO concern, so the report shows exactly which infra we own vs. the
+  customer.
+- The one cloud check that still matters in BYO is **egress reachability to the control-plane
+  FQDN** — the customer's edge must permit it. We surface it (amber, shared responsibility) but
+  cannot enforce it.

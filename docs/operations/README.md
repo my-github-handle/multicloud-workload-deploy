@@ -8,16 +8,42 @@ point; component-specific runbooks are linked below.
 
 ---
 
+## Pick your path
+
+```
+Do you already have a Kubernetes cluster?
+├─ YES → BYOC fast path: a single `terraform apply` of the Layer-3 deploy onto your cluster.
+│         Walkthrough: common/verify-on-kind.md (generalizes to any EKS/GKE/AKS).
+└─ NO  → Greenfield: provision the cluster + network/identity/encryption, then deploy.
+          AWS: aws/deploy.md   ·   GCP/Azure: planned.
+
+Can the deploy identity create a cluster-scoped CRD + ClusterRole?
+├─ YES → Tier A (operator): common/workload-operator.md
+└─ NO  → Tier B (Helm-only, namespace-scoped): common/helm-only-tier-b.md
+
+Every path runs the preflight gate first: common/preflight.md.
+```
+
 ## Map of operations docs
+
+**Common** (cloud-agnostic — apply to every path):
 
 | Doc | Scope |
 |---|---|
-| This file | Whole-project: prerequisites, deploy paths, day-2 overview |
-| [`preflight.md`](./preflight.md) | Running the preflight checker and reading its report |
-| [`workload-operator.md`](./workload-operator.md) | Tier A: operating the operator and `Workload` resources |
-| [`helm-only-tier-b.md`](./helm-only-tier-b.md) | Tier B: deploying `charts/workload` with Helm only (no operator/CRD) |
-| [`examples/`](./examples) | Runnable, copy-pasteable manifests and commands |
-| [`../../test/runbooks/`](../../test/runbooks) | Infra-dependent verification procedures (kind, per-cloud) |
+| This file | Entry point: pick-your-path, prerequisites, day-2, governance |
+| [`common/preflight.md`](./common/preflight.md) | The preflight gate — running it, reading the report, per-concern applicability |
+| [`common/workload-operator.md`](./common/workload-operator.md) | Tier A: operating the operator and `Workload` resources |
+| [`common/helm-only-tier-b.md`](./common/helm-only-tier-b.md) | Tier B: deploying `charts/workload` with Helm only (no operator/CRD) |
+| [`common/byoc-deploy.md`](./common/byoc-deploy.md) | BYOC fast path (`_agnostic-deploy`): one apply onto an existing cluster |
+| [`common/verify-on-kind.md`](./common/verify-on-kind.md) | BYOC fast-path walkthrough on kind (no cloud account) |
+| [`examples/`](./common/examples) | Runnable, copy-pasteable `Workload` manifests |
+
+**Per cloud** (greenfield: provision infra + deploy, end to end):
+
+| Doc | Scope |
+|---|---|
+| [`aws/deploy.md`](./aws/deploy.md) | AWS greenfield (`aws-full`): provision → two-phase apply → verify → BYO variations → day-2 → teardown |
+| `gcp/`, `azure/` | Planned — same per-cloud shape as `aws/`. |
 
 ---
 
@@ -31,68 +57,24 @@ point; component-specific runbooks are linked below.
 
 ## Deploy paths
 
-The product has two entry shapes (see [`../architecture.md`](../architecture.md) §5). This guide
-covers the cloud-agnostic core install that both paths share.
+The product has two entry shapes (see [`../architecture.md`](../architecture.md) §5):
 
-### 0. Preflight (gate before deploy)
+- **Greenfield** — provision the cloud infra (network, identity, encryption, cluster) *and* deploy,
+  in one Terraform root. Per-cloud, end to end: **[`aws/deploy.md`](./aws/deploy.md)** (GCP/Azure
+  planned). The preflight gate runs automatically and blocks `apply` on a red verdict.
 
-The Terraform deploy paths run the preflight checker automatically and block `apply` on a red
-verdict. To check a cluster ahead of time:
+- **BYOC** — you already have a cluster; a single `terraform apply` (or staged Helm install) lays
+  down the cloud-agnostic Layer-3 deploy. The shared sequence:
 
-```bash
-mage preflightBuild
-operator/bin/preflight --kubeconfig "$KUBECONFIG" --namespace <app-namespace> --exit-on-red
-```
+  1. **Preflight** — `mage preflightBuild` then run the gate; see [`common/preflight.md`](./common/preflight.md).
+  2. **Install** — **Tier A** (operator + CRD): [`common/workload-operator.md`](./common/workload-operator.md);
+     or **Tier B** (Helm-only, namespace-scoped): [`common/helm-only-tier-b.md`](./common/helm-only-tier-b.md).
+  3. **Deploy a `Workload`** — `kubectl apply -f common/examples/workload-basic.yaml` (see [`examples/`](./common/examples)
+     for probes/ingress/root-image/autoscale variants).
+  4. **Verify** — `Ready=True` + the full child set; every child carries
+     `app.kubernetes.io/{name,instance,part-of,managed-by}` for fleet-wide querying.
 
-Green → proceed; amber → proceed with documented gaps; red → fix the reported prerequisite first.
-See [`preflight.md`](./preflight.md) for flags, result IDs, and remediation.
-
-### 1. Install the operator (Tier A)
-
-```bash
-# Create the namespace the operator runs in.
-kubectl create namespace workload-system
-
-# (private registry only) create a pull secret in the operator namespace.
-kubectl -n workload-system create secret docker-registry ghcr-pull \
-  --docker-server=ghcr.io --docker-username=<user> --docker-password=<token>
-
-# Install the CRD, controller, and namespace-scoped RBAC.
-helm install op charts/workload-operator \
-  --namespace workload-system \
-  --set image.repository=<registry>/workload-operator \
-  --set image.tag=<version> \
-  --set watchNamespace=<app-namespace> \
-  --set 'imagePullSecrets[0].name=ghcr-pull' \
-  --set serviceMonitor.enabled=true        # if the Prometheus Operator CRD is present
-```
-
-The operator and the workloads it manages **may live in different namespaces** — set
-`watchNamespace` to the app namespace; RBAC is granted there automatically.
-
-### 2. Deploy a workload
-
-```bash
-kubectl apply -f docs/operations/examples/workload-basic.yaml
-```
-
-See [`examples/`](./examples) for variants (probes, ingress, private/root images, autoscaling).
-
-> **No cluster-scoped permissions?** Use the operator-less **Tier B** path instead — install
-> `charts/workload` directly with Helm, no operator or CRD required. See
-> [`helm-only-tier-b.md`](./helm-only-tier-b.md). The security floor and HPA work identically.
-
-### 3. Verify
-
-```bash
-kubectl -n <app-namespace> get workload,deploy,svc,hpa,pdb,networkpolicy \
-  -l app.kubernetes.io/instance=<name>
-kubectl -n <app-namespace> get workload <name> \
-  -o jsonpath='{range .status.conditions[*]}{.type}={.status}{"\n"}{end}'
-```
-
-Expect `Ready=True` and the full child set. Every child carries
-`app.kubernetes.io/{name,instance,part-of,managed-by}` for fleet-wide querying.
+  A complete copy-pasteable BYOC walkthrough is [`common/verify-on-kind.md`](./common/verify-on-kind.md).
 
 ---
 
@@ -102,7 +84,7 @@ Expect `Ready=True` and the full child set. Every child carries
 |---|---|
 | Update image / scale bounds | edit the `Workload` (`kubectl edit workload <name>`); the operator reconciles |
 | Inspect status | `kubectl get workload <name> -o yaml` → `.status.conditions`, `.status.readyReplicas` |
-| Diagnose a stuck workload | see [`workload-operator.md`](./workload-operator.md) → Troubleshooting |
+| Diagnose a stuck workload | see [`common/workload-operator.md`](./common/workload-operator.md) → Troubleshooting |
 | Upgrade the operator | `helm upgrade op charts/workload-operator …` (re-applies the CRD) |
 | Uninstall a workload | `kubectl delete workload <name>` — children are garbage-collected via owner refs |
 | Uninstall the operator | `helm uninstall op -n workload-system` (CRD removal is manual and deletes all Workloads) |
