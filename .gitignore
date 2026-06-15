@@ -40,3 +40,4 @@ dist/
 
 # Composition roots are consumer-owned scaffolding (reference compositions live in docs).
 live/
+modules/gcp/iam/artifacts/

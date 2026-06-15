@@ -6,7 +6,8 @@
 
 > Companion documents: [`spec.md`](./spec.md) (requirements & scope) ·
 > [`design.md`](./design.md) (detailed engineering design) ·
-> [`architecture/aws.md`](./architecture/aws.md) (AWS building blocks & `aws-full` greenfield).
+> [`architecture/aws.md`](./architecture/aws.md) (AWS building blocks & `aws-full` greenfield) ·
+> [`architecture/gcp.md`](./architecture/gcp.md) (GCP building blocks & `gcp-full` greenfield).
 
 ---
 
@@ -205,6 +206,7 @@ modules/
     cluster-resolver/   # uniform {endpoint, ca, auth} (created or looked up)
     preflight/          # per-stage checks owned by this cloud's modules
   gcp/
+    project/            # dedicated-project create-or-BYO + required service-API enablement
     network/            # VPC, subnets, Cloud NAT, routes, Cloud NGFW (egress)
     network-resolver/   # uniform {vpc_id, subnet_ids, egress_path_ref} (created or looked up)
     iam/                # GCP service accounts, Workload Identity bindings, custom roles

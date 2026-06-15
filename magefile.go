@@ -40,6 +40,7 @@ var (
 		"github.com/ops-dev/multicloud-workload-deploy/operator/internal/preflight," +
 		"github.com/ops-dev/multicloud-workload-deploy/operator/internal/cloud/fake," +
 		"github.com/ops-dev/multicloud-workload-deploy/operator/internal/cloud/aws," +
+		"github.com/ops-dev/multicloud-workload-deploy/operator/internal/cloud/gcp," +
 		"github.com/ops-dev/multicloud-workload-deploy/operator/cmd/preflight"
 )
 
@@ -153,6 +154,30 @@ func TestE2EAWSNoEKS() error {
 	mg.Deps(PreflightBuild)
 	return sh.RunV("go", "test", "-tags", "e2e_aws", "./test/e2e/...",
 		"-run", "TestAWSNoEKS", "-v", "-count=1", "-timeout", "40m")
+}
+
+// TestE2EGCP runs the GCP greenfield real-world test: it drives the live/gcp-full
+// two-phase Terraform apply against a real GCP project (Application Default
+// Credentials), asserts the satellite came up, and tears down. Build-tagged
+// e2e_gcp and gated on E2E_GCP=true, because it provisions a private GKE cluster +
+// Cloud NAT (~20-30 min, real cost). Build the preflight binary and create
+// live/gcp-full/terraform.tfvars first; see docs/operations/gcp/deploy.md.
+func TestE2EGCP() error {
+	mg.Deps(PreflightBuild)
+	return sh.RunV("go", "test", "-tags", "e2e_gcp", "./test/e2e/...",
+		"-run", "TestGCPFullGreenfield", "-v", "-count=1", "-timeout", "75m")
+}
+
+// TestE2EGCPNoGKE runs the no-GKE building-blocks test: it applies project +
+// network + kms + secrets (no cluster) against a real project (Application Default
+// Credentials), asserts the module outputs + the preflight binary's GCP cloud
+// stages against the live resources, then destroys. Build-tagged e2e_gcp and
+// gated on E2E_GCP_NOGKE=true. A few $ for Cloud NAT, ~5-8 min. Build the
+// preflight binary first (mage preflightBuild).
+func TestE2EGCPNoGKE() error {
+	mg.Deps(PreflightBuild)
+	return sh.RunV("go", "test", "-tags", "e2e_gcp", "./test/e2e/...",
+		"-run", "TestGCPNoGKE", "-v", "-count=1", "-timeout", "40m")
 }
 
 // LintCharts lints both Helm charts.

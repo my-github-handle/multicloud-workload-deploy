@@ -32,17 +32,28 @@ locals {
   )
 }
 
+# Ordering gate: holds the upstream readiness handles (the Workload CRD being
+# Established, the secret material existing). The workload resources reference it
+# via replace_triggered_by so they apply only after those upstreams exist.
+resource "terraform_data" "ordering" {
+  input = "${var.crd_ready}:${var.secrets_ready}"
+}
+
 # Tier A: apply the Workload custom resource; the operator reconciles it into
 # Deployment/Service/HPA/PDB and owns its lifecycle, status, and drift correction.
 #
 # kubectl_manifest applies raw YAML with no plan-time CRD schema discovery, so the CR can be planned
-# before its CRD exists and applied in the same run after the operator installs it. Apply ordering
-# is set at the root via module.workload's depends_on.
+# before its CRD exists and applied in the same run after the operator installs it. The
+# replace_triggered_by reference to terraform_data.ordering gates the apply on the upstreams.
 resource "kubectl_manifest" "workload_cr" {
   count = local.is_tier_a ? 1 : 0
 
   yaml_body         = yamlencode(local.workload_manifest)
   server_side_apply = true
+
+  lifecycle {
+    replace_triggered_by = [terraform_data.ordering]
+  }
 
   wait = var.wait_for_ready
   timeouts {

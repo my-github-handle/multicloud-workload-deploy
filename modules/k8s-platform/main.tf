@@ -36,6 +36,18 @@ resource "helm_release" "operator" {
     name  = "watchNamespace"
     value = var.namespace
   }
+
+  # The operator image is distributed PRIVATELY; when a pull secret name is
+  # supplied, wire it onto the operator's ServiceAccount via the chart's
+  # imagePullSecrets value so the controller image can be pulled. Empty = the
+  # image is reachable without a pull secret.
+  dynamic "set" {
+    for_each = var.image_pull_secret_name != "" ? [var.image_pull_secret_name] : []
+    content {
+      name  = "imagePullSecrets[0].name"
+      value = set.value
+    }
+  }
 }
 
 # Tier A only: wait for the Workload CRD to reach its Established condition after the operator

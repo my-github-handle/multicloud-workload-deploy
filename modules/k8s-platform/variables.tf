@@ -58,3 +58,9 @@ variable "crd_wait_timeout" {
   type        = string
   default     = "120s"
 }
+
+variable "image_pull_secret_name" {
+  description = "Name of a Kubernetes docker-registry secret in the operator namespace used to pull the (private) operator image. Empty when the image needs no pull secret. The greenfield/root composition creates the secret and passes its name here."
+  type        = string
+  default     = ""
+}

@@ -10,6 +10,7 @@ import (
 	"github.com/ops-dev/multicloud-workload-deploy/operator/internal/cloud"
 	awsprovider "github.com/ops-dev/multicloud-workload-deploy/operator/internal/cloud/aws"
 	"github.com/ops-dev/multicloud-workload-deploy/operator/internal/cloud/fake"
+	gcpprovider "github.com/ops-dev/multicloud-workload-deploy/operator/internal/cloud/gcp"
 	"github.com/ops-dev/multicloud-workload-deploy/operator/internal/preflight"
 )
 
@@ -24,10 +25,22 @@ func TestSelectProviderDefaultsToFakeWhenCloudUnset(t *testing.T) {
 }
 
 func TestSelectProviderRealCloudNotYetImplemented(t *testing.T) {
-	for _, c := range []string{"gcp", "azure"} {
+	for _, c := range []string{"azure"} {
 		if _, err := selectProvider(c); err == nil {
 			t.Errorf("selectProvider(%q) = nil error, want not-implemented error", c)
 		}
+	}
+}
+
+// TestSelectProviderGCPReturnsRealProvider asserts the real GCP provider is wired
+// (it previously returned a not-implemented error).
+func TestSelectProviderGCPReturnsRealProvider(t *testing.T) {
+	p, err := selectProvider("gcp")
+	if err != nil {
+		t.Fatalf("selectProvider(\"gcp\") returned error: %v", err)
+	}
+	if _, ok := p.(*gcpprovider.Provider); !ok {
+		t.Fatalf("expected *gcp.Provider, got %T", p)
 	}
 }
 
