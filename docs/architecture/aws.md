@@ -150,26 +150,22 @@ modules used by the BYOC fast path, yielding a secure, observable, lifecycle-man
 a freshly provisioned EKS cluster:
 
 ```
-network → kms → iam → secrets → cluster (incl. vpc-cni custom networking) →
-        (network-resolver, cluster-resolver) → preflight (full mode, AWS provider) →
-        Layer-3 modules (operator, security, observability, workload) [+ optional Cilium chaining]
+phase1-infra:  network → kms → cluster (incl. vpc-cni custom networking) → iam → kubeconfig
+phase2-deploy: secrets → preflight (full mode, AWS provider) →
+               Layer-3 modules (operator, security, observability, workload)
 ```
 
-### Single apply
+### Two-phase apply
 
-`aws-full` provisions everything and deploys the satellite in **one `terraform apply`**. The
-`kubernetes`/`helm`/`kubectl` providers take the cluster endpoint/CA from `cluster-resolver` and
-authenticate with the EKS exec-plugin (`aws eks get-token`); on a fresh state those endpoint/CA
-values are computed, so Terraform defers the in-cluster resources until after the EKS cluster is
-created — within the same apply. The preflight binary's kubeconfig is rendered during the apply,
-and the install tier is fixed to `A` (a freshly provisioned cluster's deploy identity can create
-the cluster-scoped CRD + ClusterRole), so the platform/workload counts are known at plan time.
+`aws-full` is split into `phase1-infra` and `phase2-deploy`. Phase 1 provisions AWS
+infrastructure and writes a kubeconfig. Phase 2 reads phase-1 state, runs preflight against the
+live EKS API server, creates the Secrets Store CSI `SecretProviderClass`, and applies Layer 3.
+This avoids a plan-time preflight data source trying to validate Kubernetes stages before the
+cluster exists.
 
 The VPC CNI custom networking is part of the cluster, so nodes are `Ready` and pods are on the
-secondary CIDR with no bootstrap gap; the preflight gate, the Secrets Store CSI
-`SecretProviderClass`, the agnostic Layer-3 modules, and (optionally) Cilium chaining all apply in
-the same pass. The exec-plugin auth fetches a fresh token at apply time rather than persisting one
-in state.
+secondary CIDR with no bootstrap gap. The exec-plugin auth fetches a fresh token at phase-2 apply
+time rather than persisting one in state.
 
 ---
 

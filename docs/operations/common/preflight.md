@@ -59,10 +59,10 @@ Output is a flat JSON object with two string keys:
   and `remediation`.
 
 The verdict is computed as: **red if any blocking stage is red; else amber if any blocking stage
-is amber; else green.** A non-blocking stage (the cloud stages 0–3 in greenfield `full` mode, which
-the same apply provisions) keeps its true severity in the report but contributes at most amber to
-the verdict — it never makes the verdict red. The first blocking red short-circuits the rest
-(later stages are marked `skipped`).
+is amber; else green.** A non-blocking stage (the cloud stages 0–3 in greenfield `full` mode, whose
+resources are created by phase 1) keeps its true severity in the report but contributes at most
+amber to the verdict — it never makes the verdict red. The first blocking red short-circuits the
+rest (later stages are marked `skipped`).
 
 The binary **always exits 0** when there is no `--exit-on-red`, even on internal errors (bad
 kubeconfig, unimplemented `--cloud`) — those become a red verdict carrying the error, so a caller
@@ -157,9 +157,10 @@ keys on `verdict`.
 
 - **agnostic** (BYOC, the primary path): every stage blocks. A red anywhere stops the apply and
   short-circuits later stages.
-- **full** (greenfield `<cloud>-full`): the cloud stages (0–3) are provisioned by the same apply,
-  so they're informational — they still run and report their true severity, but a red there does
-  not block and does not skip the Kubernetes stages. A red in a Kubernetes stage still blocks.
+- **full** (greenfield `<cloud>-full/phase2-deploy`): cloud stages (0–3) cover resources created
+  by phase 1, so they're informational — they still run and report their true severity, but a red
+  there does not block and does not skip the Kubernetes stages. A red in a Kubernetes stage still
+  blocks.
 
 ---
 
@@ -198,11 +199,11 @@ When the customer **brings the cluster** (and possibly the network/key/identity 
 load-bearing checks shift from "can we provision cloud infra?" to "can we deploy onto what
 exists?":
 
-- The **BYOC fast path (`_agnostic-deploy`)** runs **no** `--cloud` provider at all — stages 0–3 are
-  inert, and the gate is entirely **stages 4–5** plus the shared-responsibility contract.
-- The greenfield `aws-full` path with **BYO toggles** runs `--cloud=aws` but the cloud stages
-  degrade to amber per BYO concern, so the report shows exactly which infra we own vs. the
-  customer.
+- The **BYOC fast path (`roots/agnostic-deploy`)** runs **no** `--cloud` provider at all — stages
+  0–3 are inert, and the gate is entirely **stages 4–5** plus the shared-responsibility contract.
+- The greenfield `roots/<cloud>-full/phase2-deploy` path with **BYO toggles** runs the cloud
+  provider but the cloud stages degrade to amber per BYO concern, so the report shows exactly which
+  infra we own vs. the customer.
 - The one cloud check that still matters in BYO is **egress reachability to the control-plane
   FQDN** — the customer's edge must permit it. We surface it (amber, shared responsibility) but
   cannot enforce it.

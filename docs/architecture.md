@@ -23,9 +23,9 @@ never a tangle of `create_*` booleans inside modules.
 │  Marketplace packaging (future enhancement)                    │
 │    └─ built on: BOM-versioned release (operator image +        │
 │       charts + TF modules), cosign-signed, SBOM (§7)           │
-├─ Layer 4: Composition (root configs / "live" envs) ───────────┤
-│  Entry points:  _agnostic-deploy (BYOC fast path)             │
-│                 <cloud>-full (greenfield fallback)            │
+├─ Layer 4: Composition (runnable roots) ───────────────────────┤
+│  Entry points:  roots/agnostic-deploy (BYOC fast path)        │
+│                 roots/<cloud>-full/{phase1-infra,phase2-deploy}│
 │  Toggles: BYO-VPC · BYO-cluster · BYO-key (independent)       │
 ├─ Layer 3: Cloud-agnostic Kubernetes layer ────────────────────┤
 │  operator (CRD+controller) · connect-agent · security policies │
@@ -79,11 +79,12 @@ never a tangle of `create_*` booleans inside modules.
 
 ## 3. Tooling & Drivers
 
-- **Terraform is the single driver.** Every deployment path — provisioning and workload
-  install — is one `terraform apply`. No separate `kubectl`/`helm`/script step in the happy
-  path; orchestration tooling stays out of the customer's hands. Preflight runs as a tested
-  checker binary that Terraform invokes (via an `external` data source) and gates `apply` on —
-  not a wrapper script (see [`design.md`](./design.md) §3).
+- **Terraform is the single driver.** BYOC is one `terraform apply` against an existing cluster.
+  Greenfield is two Terraform roots: phase 1 provisions cloud infrastructure and writes a
+  kubeconfig, phase 2 runs preflight against that live cluster and installs Layer 3. There is no
+  separate `kubectl`/`helm`/script orchestration step in the happy path; preflight runs as a tested
+  checker binary that Terraform invokes (via an `external` data source) and gates `apply` on — not
+  a wrapper script (see [`design.md`](./design.md) §3).
 - **The operator is packaged as a Helm chart** (`charts/workload-operator`). Terraform
   installs it via the **`helm` provider** (`helm_release`); the chart carries the operator's
   CRDs, controller Deployment, RBAC, ServiceMonitor, and the optional `connect-agent`. This
@@ -171,7 +172,7 @@ nothing ever connects *into* the customer environment.
 
 ## 5. Entry Points (Layer 4)
 
-### 5.1 `_agnostic-deploy` — BYOC fast path (PRIMARY)
+### 5.1 `roots/agnostic-deploy` — BYOC fast path (PRIMARY)
 
 - **Inputs:** cluster credentials/kubeconfig + a small value set (image tag, resolved key
   reference, ingress class, namespace, optional control-plane enrollment token).
@@ -184,17 +185,17 @@ nothing ever connects *into* the customer environment.
 - **Walkthrough:** [`operations/common/verify-on-kind.md`](./operations/common/verify-on-kind.md)
   (generalizes to any existing EKS/GKE/AKS).
 
-### 5.2 `<cloud>-full` — greenfield fallback (SECONDARY)
+### 5.2 `roots/<cloud>-full` — greenfield fallback (SECONDARY)
 
-- **Flow:** `[project (GCP)] → network → kms → cluster → (resolvers) → iam → secrets →
-  identical Layer 3 deploy`. Same building blocks; adds provisioning ahead of the identical
-  agnostic deploy. Each Layer-1/2 block is independently provision-or-BYO.
-- **Single apply.** Greenfield is one `terraform apply`: the in-cluster providers
-  (`kubernetes`/`helm`/`kubectl`) read the cluster-resolver's computed endpoint/CA, so
-  Terraform defers the in-cluster resources until after the cluster exists, within the same
-  apply.
-- Preflight runs the same checks, but stages it satisfies *by provisioning* are
-  informational rather than blocking. (See [`design.md`](./design.md) §3.)
+- **Flow:** phase 1 provisions `[project (GCP)] → network → kms → cluster → iam` and writes a
+  kubeconfig; phase 2 reads phase-1 state, creates secrets, runs preflight against the live
+  cluster, and applies the identical Layer 3 deploy. Same building blocks; provisioning is just
+  separated from the Kubernetes-dependent apply.
+- **Two Terraform applies.** Terraform `external` data sources run during plan, and the Kubernetes
+  stages of preflight need a reachable API server. Splitting greenfield keeps the gate honest:
+  phase 2 validates the cluster that phase 1 actually created.
+- Preflight runs the same checks in phase 2; cloud stages satisfied by phase 1 are informational
+  rather than blocking, while Kubernetes/workload stages still block red verdicts.
 - **Per-cloud runbooks:** AWS [`operations/aws/deploy.md`](./operations/aws/deploy.md) ·
   GCP [`operations/gcp/deploy.md`](./operations/gcp/deploy.md) ·
   Azure [`operations/azure/deploy.md`](./operations/azure/deploy.md). The per-cloud
@@ -249,11 +250,9 @@ modules/
   preflight/            # TF module: invokes the checker binary (external data source),
                         #   gates apply via precondition/check, emits green/amber/red report
 
-# Layer 4 composition = customer-facing entry points. These are CONSUMER-OWNED
-# composition roots (not shipped product code): reference compositions are
-# documented in docs/operations and copied into the consumer's own IaC repo.
-#   _agnostic-deploy   ★ BYOC fast path — Layer 3 + preflight, any existing cluster
-#   <cloud>-full       greenfield: network → kms → iam → cluster → Layer 3
+# Layer 4 composition = shipped customer-facing entry points under roots/.
+#   agnostic-deploy    ★ BYOC fast path — Layer 3 + preflight, any existing cluster
+#   <cloud>-full       greenfield phase1-infra → phase2-deploy
 # BYO permutations (network/cluster/key brought in, rest provisioned) compose the
 # same modules with resolvers in lookup mode — no separate module variants needed.
 

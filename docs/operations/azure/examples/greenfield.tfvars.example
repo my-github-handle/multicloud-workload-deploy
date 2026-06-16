@@ -1,6 +1,6 @@
-# Example terraform.tfvars for the azure-full greenfield root — single apply.
-# Copy into your azure-full composition root as terraform.tfvars and edit the
-# placeholders. Do NOT commit real credentials or IDs.
+# Example values for the azure-full greenfield roots.
+# The shipped runnable examples live under roots/azure-full/phase1-infra and
+# roots/azure-full/phase2-deploy. Keep this as an operations reference only.
 
 subscription_id = "00000000-0000-0000-0000-000000000000"
 tenant_id       = "11111111-1111-1111-1111-111111111111"
@@ -20,8 +20,7 @@ cluster_mode = "provision"
 
 # Absolute path to the preflight binary (mage preflightBuild).
 preflight_binary = "/path/to/multicloud-workload-deploy/operator/bin/preflight"
-# Greenfield generates the kubeconfig in-graph and ignores kubeconfig_path; set
-# it only for cluster_mode = "byo".
+# Phase 1 generates the kubeconfig; phase 2 reads it from phase-1 state.
 
 namespace                 = "workload-system"
 service_account           = "workload"
@@ -68,6 +67,13 @@ workload_port = 8080
 workload_spec_yaml = <<-YAML
   image: ghcr.io/e2b-dev/sre-interview:latest
   port: 8080
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
   securityContext:
     runAsNonRoot: false
     allowPrivilegeEscalation: false

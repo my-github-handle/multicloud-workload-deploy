@@ -2,8 +2,8 @@
 
 The cloud-agnostic entry point: **one `terraform apply`** against an existing Kubernetes cluster
 (kubeconfig only, no cloud-provider credentials) produces a preflight-gated, secure, observable,
-lifecycle-managed Workload. It is a small composition root (consumer-owned scaffolding) that wires
-the shared Layer-3 modules; copy the reference composition into your own IaC repo.
+lifecycle-managed Workload. The shipped root is [`roots/agnostic-deploy`](../../../roots/agnostic-deploy);
+use it directly or copy it into your own IaC repo to wire remote state.
 
 It composes the five Layer-3 modules in order:
 

@@ -1,6 +1,6 @@
-# Example terraform.tfvars for the aws-full greenfield root — single apply.
-# Copy into your aws-full composition root as terraform.tfvars and edit the
-# placeholders. Do NOT commit real credentials or account IDs.
+# Example values for the aws-full greenfield roots.
+# The shipped runnable examples live under roots/aws-full/phase1-infra and
+# roots/aws-full/phase2-deploy. Keep this as an operations reference only.
 
 region      = "us-east-1"
 name        = "workload"
@@ -50,8 +50,7 @@ egress_allowed_fqdns = ["ghcr.io", "github.com", "pkg-containers.githubuserconte
 install_cilium        = false
 observability_enabled = false
 
-# The SecretProviderClass renders in the same apply (the Secrets Store CSI add-on
-# provides the CRD).
+# The SecretProviderClass renders in phase 2 after phase 1 has created the cluster.
 create_secret_provider_class = true
 
 secrets = {
@@ -67,6 +66,13 @@ workload_name = "demo"
 workload_spec_yaml = <<-YAML
   image: ghcr.io/e2b-dev/sre-interview:latest
   port: 8080
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
   securityContext:
     runAsNonRoot: false
     allowPrivilegeEscalation: false

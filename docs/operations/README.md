@@ -12,9 +12,9 @@ point; component-specific runbooks are linked below.
 
 ```
 Do you already have a Kubernetes cluster?
-├─ YES → BYOC fast path: a single `terraform apply` of the Layer-3 deploy onto your cluster.
+├─ YES → BYOC fast path: one `terraform apply` from roots/agnostic-deploy.
 │         Walkthrough: common/verify-on-kind.md (generalizes to any EKS/GKE/AKS).
-└─ NO  → Greenfield: provision the cluster + network/identity/encryption, then deploy.
+└─ NO  → Greenfield: roots/<cloud>-full/phase1-infra, then phase2-deploy.
           AWS: aws/deploy.md   ·   GCP: gcp/deploy.md   ·   Azure: azure/deploy.md.
 
 Can the deploy identity create a cluster-scoped CRD + ClusterRole?
@@ -34,7 +34,7 @@ Every path runs the preflight gate first: common/preflight.md.
 | [`common/preflight.md`](./common/preflight.md) | The preflight gate — running it, reading the report, per-concern applicability |
 | [`common/workload-operator.md`](./common/workload-operator.md) | Tier A: operating the operator and `Workload` resources |
 | [`common/helm-only-tier-b.md`](./common/helm-only-tier-b.md) | Tier B: deploying `charts/workload` with Helm only (no operator/CRD) |
-| [`common/byoc-deploy.md`](./common/byoc-deploy.md) | BYOC fast path (`_agnostic-deploy`): one apply onto an existing cluster |
+| [`common/byoc-deploy.md`](./common/byoc-deploy.md) | BYOC fast path (`roots/agnostic-deploy`): one apply onto an existing cluster |
 | [`common/verify-on-kind.md`](./common/verify-on-kind.md) | BYOC fast-path walkthrough on kind (no cloud account) |
 | [`examples/`](./common/examples) | Runnable, copy-pasteable `Workload` manifests |
 
@@ -42,9 +42,9 @@ Every path runs the preflight gate first: common/preflight.md.
 
 | Doc | Scope |
 |---|---|
-| [`aws/deploy.md`](./aws/deploy.md) | AWS greenfield (`aws-full`): provision → single apply → operating notes → BYO variations → teardown; `aws/examples/` |
-| [`gcp/deploy.md`](./gcp/deploy.md) | GCP greenfield (`gcp-full`): provision → single apply → operating notes → BYO variations → teardown; `gcp/examples/` |
-| [`azure/deploy.md`](./azure/deploy.md) | Azure greenfield (`azure-full`): provision → single apply → operating notes → BYO variations → teardown; `azure/examples/` |
+| [`aws/deploy.md`](./aws/deploy.md) | AWS greenfield (`roots/aws-full`): phase 1 infra → phase 2 deploy → operating notes → BYO variations → teardown; `aws/examples/` |
+| [`gcp/deploy.md`](./gcp/deploy.md) | GCP greenfield (`roots/gcp-full`): phase 1 infra → phase 2 deploy → operating notes → BYO variations → teardown; `gcp/examples/` |
+| [`azure/deploy.md`](./azure/deploy.md) | Azure greenfield (`roots/azure-full`): phase 1 infra → phase 2 deploy → operating notes → BYO variations → teardown; `azure/examples/` |
 
 ---
 
@@ -60,8 +60,9 @@ Every path runs the preflight gate first: common/preflight.md.
 
 The product has two entry shapes (see [`../architecture.md`](../architecture.md) §5):
 
-- **Greenfield** — provision the cloud infra (network, identity, encryption, cluster) *and* deploy,
-  in one Terraform root (single apply). Per-cloud, end to end:
+- **Greenfield** — provision the cloud infra (network, identity, encryption, cluster) in
+  `phase1-infra`, then run preflight and Layer-3 deployment from `phase2-deploy`. Per-cloud, end
+  to end:
   **[`aws/deploy.md`](./aws/deploy.md)** · **[`gcp/deploy.md`](./gcp/deploy.md)** ·
   **[`azure/deploy.md`](./azure/deploy.md)**. The preflight gate runs automatically and blocks
   `apply` on a red verdict.

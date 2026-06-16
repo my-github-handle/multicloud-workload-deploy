@@ -37,8 +37,9 @@ environments as a **BYOC (Bring Your Own Cloud) product**. We need a production-
 ## 2. Success Criteria
 
 - **Primary:** a solutions engineer can run **one `terraform apply`** against a customer's
-  existing cluster and get a secure, observable, lifecycle-managed deployment — or, for
-  greenfield, provision the full stack with the same downstream experience.
+  existing cluster and get a secure, observable, lifecycle-managed deployment.
+- **Greenfield:** a solutions engineer can run the shipped two-phase roots (`phase1-infra` then
+  `phase2-deploy`) to provision the full stack and get the same downstream Layer-3 experience.
 - A customer who already owns a VPC, cluster, or encryption key can bring any subset of them
   and have us provision the rest, with no change to the workload-layer experience.
 - The same workload deploys to EKS, GKE, and AKS with only per-cloud values differing.
@@ -91,7 +92,7 @@ as versioned artifacts in the `iam` modules and asserted by preflight.
 - No compliance *certification* scope; we document how controls map to PCI-style
   requirements, we do not certify.
 - `<cloud>-full` greenfield provisioning is delivered to production standards as the secondary
-  path; the BYOC fast path, operator, and preflight are the primary surface.
+  two-phase path; the BYOC fast path, operator, and preflight are the primary surface.
 - Traffic-shifting/canary logic is **delegated** (the operator can emit an Argo Rollouts
   `Rollout`) and **capability-gated**. Kubernetes-native `RollingUpdate` is the
   always-available default. (See [`design.md`](./design.md) — Rollout Strategy.)

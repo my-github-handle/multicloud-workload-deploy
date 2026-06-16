@@ -1,7 +1,8 @@
 # BYO project, greenfield everything else. The customer pre-created the GCP
 # project (the common BYOC case); we resolve it (and ensure the required service
 # APIs are enabled), then provision network + KMS + GKE + secrets + identity into
-# it. Copy into your gcp-full root as terraform.tfvars and edit the placeholders.
+# it. This is an operations reference; runnable split examples live under
+# roots/gcp-full/{phase1-infra,phase2-deploy}.
 
 # --- project: resolve an existing one (do NOT create) ---
 project_mode = "byo"
@@ -41,6 +42,13 @@ workload_name = "demo"
 workload_spec_yaml = <<-YAML
   image: gcr.io/google-samples/hello-app:1.0
   port: 8080
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
   securityContext:
     runAsUser: 1000
     runAsNonRoot: true
