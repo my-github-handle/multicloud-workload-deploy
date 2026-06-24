@@ -33,9 +33,9 @@ namespace                 = "workload-system"
 service_account           = "workload"
 operator_image_repository = "ghcr.io/my-org/workload-operator"
 operator_image_tag        = "0.1.0"
-# The sre-interview image runs as root with a writable rootfs, so "restricted"
-# (which forbids root) would reject it. "baseline" still blocks privileged /
-# hostNamespace / hostPath. Use "restricted" for non-root images.
+# Stock nginx runs as root and writes to /var/cache/nginx + /var/run, so
+# "restricted" (which forbids root) would reject it. "baseline" still blocks
+# privileged / hostNamespace / hostPath. Use "restricted" for non-root images.
 psa_enforce_level = "baseline"
 
 # The operator image is private — supply pull credentials so the root creates a
@@ -65,15 +65,15 @@ secrets = {
   # "db-password" = "change-me-then-rotate-out-of-band"
 }
 
-# The sre-interview workload: HTTP app on :8080, internal/metrics on :9090.
+# Example workload: stock nginx serving HTTP on :80.
 workload_name = "demo"
-# WorkloadSpec verbatim (no `name` — that comes from workload_name). This image
+# WorkloadSpec verbatim (no `name` — that comes from workload_name). nginx
 # runs as root with a writable rootfs, so the hardened chart defaults (runAsNonRoot
 # + readOnlyRootFilesystem) are overridden; drop ALL caps + RuntimeDefault seccomp
-# are kept. The operator wires the Service to :8080.
+# are kept. The operator wires the Service to :80.
 workload_spec_yaml = <<-YAML
-  image: ghcr.io/e2b-dev/sre-interview:latest
-  port: 8080
+  image: nginx:1.27
+  port: 80
   resources:
     requests:
       cpu: 100m
@@ -96,8 +96,8 @@ workload_spec_yaml = <<-YAML
     targetCPUUtilization: 70
   livenessProbe:
     path: /
-    port: 8080
+    port: 80
   readinessProbe:
     path: /
-    port: 8080
+    port: 80
 YAML

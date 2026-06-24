@@ -1,9 +1,10 @@
 # Reviewer's guide — E2B SRE assignment
 
 This maps the assignment requirements to where each is implemented. The deliverable is a
-**BYOC multi-cloud product**, not a single deployment: the same containerized workload
-(`ghcr.io/e2b-dev/sre-interview:latest`, HTTP on `:8080`, internal on `:9090`) deploys to **AWS,
-GCP, and Azure** through reusable Terraform modules and a cloud-agnostic Kubernetes operator.
+**BYOC multi-cloud product**, not a single deployment: an arbitrary containerized workload
+(the shipped examples use stock `nginx:1.27` on `:80`; swap in any image, e.g. the assignment's
+`ghcr.io/e2b-dev/sre-interview:latest`) deploys to **AWS, GCP, and Azure** through reusable
+Terraform modules and a cloud-agnostic Kubernetes operator.
 
 Start here: [`README.md`](README.md) · [`docs/spec.md`](docs/spec.md) ·
 [`docs/architecture.md`](docs/architecture.md) · [`docs/design.md`](docs/design.md).
@@ -25,17 +26,19 @@ Start here: [`README.md`](README.md) · [`docs/spec.md`](docs/spec.md) ·
 | **Packaging (product offering)** | `release/` BOM + `mage release:*` (cosign/SBOM provenance) | Operator image (by digest) + both charts + module set pinned in a versioned BOM. |
 | **Preflight / safety** | `operator/cmd/preflight` + `operator/internal/cloud/<cloud>` + `modules/preflight` | Staged gate (identity/kms/secrets/egress/k8s) blocks `apply` on a red verdict. |
 
-## Deploy the assignment image
+## Deploy the example workload
 
-The greenfield phase-2 examples deploy `ghcr.io/e2b-dev/sre-interview:latest` end to end:
+The greenfield phase-2 examples deploy stock `nginx:1.27` end to end:
 [`roots/azure-full/phase2-deploy/terraform.tfvars.example`](roots/azure-full/phase2-deploy/terraform.tfvars.example)
-(AWS/GCP have equivalent phase-2 examples). The older operations examples carry the same workload
+(AWS/GCP have equivalent phase-2 examples). The operations examples carry the same workload
 shape:
 [`docs/operations/azure/examples/greenfield.tfvars.example`](docs/operations/azure/examples/greenfield.tfvars.example)
-(AWS/GCP have equivalent `examples/`). Because the image runs as **root** with a writable
-filesystem, the examples set the namespace PSA to `baseline` and a root-compatible
-`securityContext` (still drops ALL caps + RuntimeDefault seccomp) — the hardened chart defaults
-assume a non-root image, and this is the documented per-workload override.
+(AWS/GCP have equivalent `examples/`). To deploy a different image, just change `image` (and
+`port`) in `workload_spec_yaml` — e.g. the assignment's `ghcr.io/e2b-dev/sre-interview:latest`.
+Because stock nginx runs as **root** with a writable filesystem, the examples set the namespace
+PSA to `baseline` and a root-compatible `securityContext` (still drops ALL caps + RuntimeDefault
+seccomp) — the hardened chart defaults assume a non-root image, and this is the documented
+per-workload override.
 
 Per-cloud, end to end:
 [`docs/operations/aws/deploy.md`](docs/operations/aws/deploy.md) ·
