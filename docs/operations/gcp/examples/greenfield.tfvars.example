@@ -1,6 +1,6 @@
-# Example terraform.tfvars for the gcp-full greenfield root — single apply.
-# Copy into your gcp-full composition root as terraform.tfvars and edit the
-# placeholders. Do NOT commit real credentials or IDs.
+# Example values for the gcp-full greenfield roots.
+# The shipped runnable examples live under roots/gcp-full/phase1-infra and
+# roots/gcp-full/phase2-deploy. Keep this as an operations reference only.
 
 # --- project container (created by Terraform; or set project_mode="byo") ---
 project_mode    = "provision"
@@ -29,10 +29,14 @@ preflight_binary = "/path/to/multicloud-workload-deploy/operator/bin/preflight"
 # Rendered during the apply from the cluster-resolver outputs; just a writable path.
 kubeconfig_path = "/tmp/gcp-full.kubeconfig"
 
-namespace          = "workload-system"
-service_account    = "workload"
+namespace                 = "workload-system"
+service_account           = "workload"
 operator_image_repository = "ghcr.io/my-org/workload-operator"
 operator_image_tag        = "0.1.0"
+# Stock nginx runs as root and writes to /var/cache/nginx + /var/run, so
+# "restricted" (which forbids root) would reject it. "baseline" still blocks
+# privileged / hostNamespace / hostPath. Use "restricted" for non-root images.
+psa_enforce_level = "baseline"
 
 # The operator image is private — supply pull credentials so the root creates a
 # docker-registry secret and wires it onto the operator ServiceAccount.
@@ -53,26 +57,34 @@ egress_allowed_cidrs = ["185.199.108.0/22"]
 # In-cluster ServiceMonitor needs the Prometheus operator CRDs; enable only if present.
 observability_enabled = false
 
-# The SecretProviderClass renders in the same apply (the GKE Secret Manager CSI
-# add-on provides the CRD).
+# The SecretProviderClass renders in phase 2 (the GKE Secret Manager CSI add-on
+# is enabled by the phase-1 cluster).
 create_secret_provider_class = true
 
 secrets = {
   # "db-password" = "change-me-then-rotate-out-of-band"
 }
 
+# Example workload: stock nginx serving HTTP on :80.
 workload_name = "demo"
-# The spec is the WorkloadSpec verbatim (no `name` — that comes from workload_name).
-# Container securityContext must satisfy the namespace's restricted Pod Security
-# Admission (runAsNonRoot + numeric runAsUser, allowPrivilegeEscalation=false,
-# drop ALL caps, RuntimeDefault seccomp), and the image must run as non-root.
+# WorkloadSpec verbatim (no `name` — that comes from workload_name). nginx
+# runs as root with a writable rootfs, so the hardened chart defaults (runAsNonRoot
+# + readOnlyRootFilesystem) are overridden; drop ALL caps + RuntimeDefault seccomp
+# are kept. The operator wires the Service to :80.
 workload_spec_yaml = <<-YAML
-  image: gcr.io/google-samples/hello-app:1.0
-  port: 8080
+  image: nginx:1.27
+  port: 80
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
   securityContext:
-    runAsUser: 1000
-    runAsNonRoot: true
+    runAsNonRoot: false
     allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: false
     capabilities:
       drop:
         - ALL
@@ -84,8 +96,8 @@ workload_spec_yaml = <<-YAML
     targetCPUUtilization: 70
   livenessProbe:
     path: /
-    port: 8080
+    port: 80
   readinessProbe:
     path: /
-    port: 8080
+    port: 80
 YAML

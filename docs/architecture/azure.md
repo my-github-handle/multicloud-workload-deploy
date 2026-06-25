@@ -141,28 +141,21 @@ and resource-pinned.
 ## 5. `azure-full` Greenfield Composition
 
 ```
-resource group → log analytics → network → kms → cluster →
-        (network-resolver, cluster-resolver) → iam → secrets →
-        azure_preflight → preflight (full mode, azure provider) →
-        Layer-3 (operator, security, observability, workload)   [NO Cilium helm_release]
+phase1-infra:  resource group → log analytics → network → kms → cluster → iam → kubeconfig
+phase2-deploy: secrets → preflight (full mode, azure provider) →
+               Layer-3 (operator, security, observability, workload)   [NO Cilium helm_release]
 ```
 
-The greenfield composition root (`azure-full`) is **consumer-owned scaffolding**, not shipped
-product code — the shipped product is the `modules/azure/*` building blocks + the charts. Copy the
-reference composition into your own IaC repo, wire your backend/state, or author an equivalent root
-that composes the same modules.
+The shipped greenfield composition root lives under `roots/azure-full`. It can be run directly or
+copied into a customer's IaC repo to wire their backend/state.
 
-### Single apply
+### Two-phase apply
 
-Greenfield `azure-full` is a single `terraform apply`. Two details make that work:
+Greenfield `azure-full` is two Terraform applies:
 
-- The kubeconfig is generated **in-graph** from the cluster output, so no manual
-  `az aks get-credentials` step is needed. The `kubernetes`/`helm`/`kubectl` providers configure
-  from `cluster-resolver` outputs, which are unknown at plan but resolved at apply.
-- `install_tier_override` defaults to `"A"`, making `install_tier` plan-time-known so the Layer-3
-  `count`s resolve in one pass. Preflight still runs as the gate (`fail_on_red` blocks a red
-  verdict); the override only fixes the A/B tier. Deriving the tier from the report instead leaves
-  the verdict unknown at plan and requires two applies.
+- `phase1-infra` creates the VNet, Key Vault, AKS, UAMI, and an exec-auth kubeconfig.
+- `phase2-deploy` reads phase-1 state, creates Key Vault secret material, runs preflight against
+  the live AKS API server, and installs Layer 3.
 
 A private AKS API server is reachable only from inside the VNet, so apply from a VNet-connected
 context — or, for testing, flip the endpoint to public with an IP allowlist. See
@@ -193,9 +186,9 @@ The Azure preflight contract has two halves:
 2. **`modules/azure/preflight`** — co-located Terraform data-source pre-checks (region match, vault
    purge protection, key presence) that fail the plan fast inside the graph.
 
-In `azure-full` the binary runs `--mode=full --cloud=azure`: stages the greenfield path satisfies
-by provisioning are downgraded red→amber (informational), not blocking. **Stage 0 scope:** the Go
-check validates the **runtime UAMI** binding, not the deploy-time identity; deploy-time
+In `azure-full/phase2-deploy` the binary runs `--mode=full --cloud=azure`: stages the phase-1 path
+satisfies by provisioning are downgraded red→amber (informational), not blocking. **Stage 0
+scope:** the Go check validates the **runtime UAMI** binding, not the deploy-time identity; deploy-time
 missing/excess detection is best-effort and deferred — the deploy-time policy is rendered as a
 reviewable artifact so it is inspectable.
 

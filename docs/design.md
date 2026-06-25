@@ -21,7 +21,7 @@ This document covers the detailed engineering design across **all layers**:
 | **Layer 1** — building blocks (`network`, `iam`, `kms`, `secrets`, GCP `project`) | provision-or-BYO module contracts, least-privilege IAM | §1 |
 | **Layer 2** — per-cloud platform (`cluster`, `cluster-resolver`) | hardened private cluster, uniform auth interface | §2 |
 | **Layer 3** — cloud-agnostic Kubernetes (operator, security, observability, connect-agent) | the satellite that runs identically everywhere | §3 |
-| **Layer 4** — composition / entry points (`_agnostic-deploy`, `<cloud>-full`) | how the layers compose into a single apply | §4 |
+| **Layer 4** — composition / entry points (`agnostic-deploy`, `<cloud>-full`) | BYOC single apply and greenfield two-phase composition | §4 |
 | Cross-cutting — preflight, rollout, testing | the staged gate, rollout strategy, test matrix | §5–§7 |
 | **Layer 5** — packaging & release | BOM-versioned artifacts + provenance | §8 |
 
@@ -152,9 +152,9 @@ onto. Like Layer 1 it is provision-or-BYO with the branch isolated in the resolv
 - `auth` is a **tagged object** so it represents both the exec-plugin/token form (EKS
   `aws eks get-token`; GKE `gke-gcloud-auth-plugin` / access token) and the client-cert form
   (AKS local-accounts). The endpoint is scheme-normalized to a single `https://` prefix.
-- Because the providers read these (apply-time-computed on greenfield) outputs, Terraform defers
-  the in-cluster resources until the cluster exists — enabling the **single-apply greenfield**
-  path (§4).
+- In BYO-cluster paths the resolver normalizes existing cluster auth for the Kubernetes providers.
+  In greenfield, phase 1 writes a kubeconfig for the newly created cluster; phase 2 uses that
+  kubeconfig for preflight and the Layer-3 providers (§4).
 
 ---
 
@@ -298,12 +298,12 @@ tiers cannot drift. What differs between tiers is lifecycle ownership, never the
 
 ## 4. Layer 4 — Composition & Entry Points
 
-Layer 4 is where the building blocks compose into a deployable whole. The composition roots are
-**consumer-owned scaffolding** (reference compositions documented in `docs/operations` and copied
-into the consumer's IaC repo), not shipped product code — the shipped product is the modules +
-charts. There are two entry shapes; both run the **same Layer 3** and the **same preflight gate**.
+Layer 4 is where the building blocks compose into a deployable whole. The shipped roots under
+`roots/` are runnable reference entry points: customers can run them directly or copy them into
+their own IaC repo to wire remote backends and policy. There are two entry shapes; both run the
+**same Layer 3** and the **same preflight gate**.
 
-### 4.1 `_agnostic-deploy` — BYOC fast path (primary)
+### 4.1 `agnostic-deploy` — BYOC fast path (primary)
 
 - Deploys onto an **existing** cluster; needs only cluster access (kubeconfig), not cloud-admin
   creds. The `kubernetes`/`helm`/`kubectl` providers are kubeconfig-driven.
@@ -313,16 +313,15 @@ charts. There are two entry shapes; both run the **same Layer 3** and the **same
 
 ### 4.2 `<cloud>-full` — greenfield (secondary)
 
-- Provisions the cloud infra (`[project (GCP)] → network → kms → cluster → resolvers → iam →
-  secrets`) **then** runs the identical Layer 3 deploy. Each Layer-1/2 block is independently
-  provision-or-BYO via its mode toggle; mixed BYO (e.g. BYO-VPC, provision the rest) composes the
-  same modules with resolvers in lookup mode.
-- **Single apply.** The in-cluster providers read the cluster-resolver's `{endpoint, ca, auth}`,
-  which are apply-time-computed on a fresh state, so Terraform defers the in-cluster resources
-  until the cluster exists — within the same apply. The preflight kubeconfig is rendered during
-  the apply, and the install tier is fixed to A (a freshly provisioned cluster's deploy identity
-  can create the cluster-scoped CRD + ClusterRole), so the platform/workload counts are
-  plan-known.
+- Provisions the cloud infra (`[project (GCP)] → network → kms → cluster → iam`) in
+  `phase1-infra`, then runs `phase2-deploy` to create secrets, run preflight against the live
+  cluster, and apply the identical Layer 3 deploy. Each Layer-1/2 block remains independently
+  provision-or-BYO via its mode toggle; mixed BYO composes the same modules with resolvers in
+  lookup mode.
+- **Two applies by design.** Terraform data sources run during plan, so a preflight `external`
+  data source cannot honestly validate Kubernetes stages against a cluster that does not exist
+  yet. Phase 1 creates the cluster and kubeconfig; phase 2 validates and deploys. BYOC remains one
+  apply because the API server already exists.
 - Per-cloud runbooks + tfvars examples: [`operations/aws/deploy.md`](./operations/aws/deploy.md),
   [`operations/gcp/deploy.md`](./operations/gcp/deploy.md),
   [`operations/azure/deploy.md`](./operations/azure/deploy.md).
@@ -386,10 +385,10 @@ Stage 5  Workload readiness     ── final go/no-go for the Workload CR
   (`modules/<cloud>/iam/preflight.*`, `.../kms/`, `.../network/`, `.../cluster-resolver/`).
   The module that knows a requirement owns its check.
 - A thin **`preflight` orchestrator** sequences the stages and aggregates reports. Both entry
-  points use it: `_agnostic-deploy` runs all stages against existing infra (blocking);
-  `<cloud>-full` runs the same checks, but stages it satisfies by provisioning are
-  informational rather than blocking. **Same checks, different blocking semantics — no
-  duplicated logic.**
+  points use it: `agnostic-deploy` runs all stages against existing infra (blocking);
+  `<cloud>-full/phase2-deploy` runs the same checks against phase-1 outputs, but cloud stages
+  satisfied by provisioning are informational rather than blocking. **Same checks, different
+  blocking semantics — no duplicated logic.**
 
 ### Invocation: Terraform-driven, no wrapper script
 
@@ -406,8 +405,8 @@ Terraform**, not a shell script:
   gate and are recorded in the report with their documented gaps.
 - The full green/amber/red staged report is emitted as a Terraform output (and a written
   artifact) for the SE to read — the rich reporting Terraform's native checks cannot express
-  on their own. The whole flow remains one `terraform apply`, fully reviewable via
-  `terraform plan`.
+  on their own. BYOC remains one `terraform apply`; greenfield keeps the same Terraform-driven
+  flow with explicit `phase1-infra` and `phase2-deploy` applies.
 
 ---
 

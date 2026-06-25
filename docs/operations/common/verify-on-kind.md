@@ -1,4 +1,4 @@
-# Verify _agnostic-deploy on kind (end-to-end, Tier A + red-gate)
+# Verify roots/agnostic-deploy on kind (end-to-end, Tier A + red-gate)
 
 Prereqs: the operator image is built/loadable (`mage dockerBuild` or pull
 `ghcr.io/<owner>/workload-operator:<tag>`), the preflight binary is built
@@ -42,10 +42,10 @@ needs a few capabilities, so this example relaxes the namespace PSA to `baseline
 security context in the spec. A non-root image keeps the default `restricted` PSA and needs none of
 that.
 
-In your BYOC composition root (a small root that wires the Layer-3 modules — copy the reference
-composition into your IaC repo):
+In the shipped BYOC root:
 
 ```bash
+cd roots/agnostic-deploy
 cat > terraform.tfvars <<EOF
 kubeconfig_path  = "/tmp/agnostic.kubeconfig"
 preflight_binary = "$(git rev-parse --show-toplevel)/operator/bin/preflight"
@@ -60,6 +60,13 @@ workload_name = "demo"
 workload_spec_yaml = <<-YAML
   image: nginx:1.27
   port: 80
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
   autoscale:
     minReplicas: 2
     maxReplicas: 5

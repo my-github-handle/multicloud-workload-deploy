@@ -1,9 +1,9 @@
 # BYO everything — fully customer-owned VPC, KMS key, IAM role, and EKS cluster.
 # aws-full provisions nothing cloud-side; it only runs preflight (every cloud
 # stage reports amber/not-applicable) and the Layer-3 deploy onto the existing
-# cluster. For this case the BYOC fast path (the _agnostic-deploy root,
+# cluster. For this case the BYOC fast path (roots/agnostic-deploy,
 # kubeconfig-driven, no cloud provider) is usually simpler — use aws-full with all
-# modes "byo" only when you want the single composition root.
+# modes "byo" only when you want the cloud-specific composition.
 #
 # Before the apply, set PREFLIGHT_AWS_PROVISION_CONCERNS="" (explicit empty).
 
@@ -45,6 +45,13 @@ workload_name = "demo"
 workload_spec_yaml = <<-YAML
   image: gcr.io/google-samples/hello-app:1.0
   port: 8080
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
   securityContext:
     runAsUser: 1000
     runAsNonRoot: true

@@ -18,9 +18,9 @@ Architecture: [`../../architecture/aws.md`](../../architecture/aws.md) · Prefli
 ## 1. What it provisions
 
 ```
-network → kms → iam → secrets → cluster (VPC CNI custom networking) →
-        (network-resolver, cluster-resolver) → preflight (full mode, AWS provider) →
-        Layer-3 (operator, security, observability, workload) [+ optional Cilium chaining]
+phase1-infra:  network → kms → cluster (VPC CNI custom networking) → iam → kubeconfig
+phase2-deploy: secrets → preflight (full mode, AWS provider) →
+               Layer-3 (operator, security, observability, workload)
 ```
 
 - **network** — VPC with a primary/secondary CIDR split, per-AZ NAT + AWS Network Firewall
@@ -37,10 +37,9 @@ top of the VPC CNI for NetworkPolicy / Hubble / `toFQDNs`; it does not own the d
 
 ---
 
-> The **greenfield composition root** (`aws-full`) is consumer-owned scaffolding, not shipped
-> product code — the shipped product is the `modules/aws/*` building blocks + the charts. Copy the
-> reference composition into your own IaC repo, wire your backend/state, or author an equivalent
-> root that composes the same modules. The commands below assume you are in such a root.
+> The shipped greenfield entry point is [`roots/aws-full`](../../../roots/aws-full). It uses local
+> state by default for reviewability; production installs should copy the roots or add a backend
+> block that matches the customer's state policy.
 
 ## 2. Prerequisites
 
@@ -54,27 +53,29 @@ top of the VPC CNI for NetworkPolicy / Hubble / `toFQDNs`; it does not own the d
 ```bash
 mage preflightBuild   # builds operator/bin/preflight
 # Seed terraform.tfvars from the example and edit the placeholders:
-cp docs/operations/aws/examples/greenfield.tfvars.example <your-aws-full-root>/terraform.tfvars
+cp roots/aws-full/phase1-infra/terraform.tfvars.example roots/aws-full/phase1-infra/terraform.tfvars
+cp roots/aws-full/phase2-deploy/terraform.tfvars.example roots/aws-full/phase2-deploy/terraform.tfvars
 ```
 
-A complete, copy-pasteable greenfield config is in
-[`examples/greenfield.tfvars.example`](./examples/greenfield.tfvars.example).
+The operations example [`examples/greenfield.tfvars.example`](./examples/greenfield.tfvars.example)
+contains the same workload values in a single file for comparison.
 
 ---
 
-## 3. Single apply
+## 3. Two-phase apply
 
-`aws-full` provisions everything and deploys the satellite in **one `terraform apply`**. The
-in-cluster providers (`kubernetes`/`helm`/`kubectl`) take the cluster endpoint/CA from the
-cluster-resolver and authenticate with the EKS exec plugin (`aws eks get-token`); on a fresh state
-the endpoint/CA are computed values, so Terraform defers the in-cluster resources until after the
-cluster exists — all within the same apply. The preflight binary's kubeconfig is rendered during the
-apply, and the install tier is fixed to `A` (a freshly provisioned cluster's deploy identity can
-always create the cluster-scoped CRD + ClusterRole), so the platform/workload counts are known at
-plan time.
+`aws-full` is intentionally split into two Terraform roots. Phase 1 provisions cloud resources and
+writes the kubeconfig. Phase 2 reads phase-1 state, runs preflight against the live EKS cluster,
+creates secret material, and deploys the cloud-agnostic Layer 3.
 
 ```bash
-# from your aws-full composition root
+# phase 1: cloud infrastructure
+cd roots/aws-full/phase1-infra
+terraform init
+terraform apply -auto-approve
+
+# phase 2: preflight + Kubernetes deploy
+cd ../phase2-deploy
 terraform init
 
 # The refs the preflight binary's --cloud=aws provider reads from env (the egress
@@ -83,9 +84,6 @@ export AWS_REGION="$(grep -E '^region' terraform.tfvars | cut -d'"' -f2)"
 # Which concerns this apply PROVISIONS (vs BYO) — scopes the Stage-0 permission
 # probe. Greenfield is all four; for a BYO mix, list only what you provision.
 export PREFLIGHT_AWS_PROVISION_CONCERNS="kms,secrets,iam,cluster"
-# KMS/VPC/egress refs resolve from state on a re-plan; on the first apply they are
-# discovered as the modules create them.
-
 terraform apply -auto-approve
 ```
 
@@ -170,15 +168,17 @@ root — until their retention period elapses. This is the point of the retentio
 it is intentional.
 
 ```bash
-# 1. Destroy everything EXCEPT the flow-log bucket and its dependents.
+# 1. Destroy phase 2 first (Layer 3 + secrets).
+cd roots/aws-full/phase2-deploy
+terraform destroy -auto-approve
+
+# 2. Destroy phase 1 EXCEPT the flow-log bucket and its dependents.
+cd ../phase1-infra
 terraform destroy -auto-approve \
-  -target=module.workload -target=module.k8s_observability \
-  -target=module.k8s_security -target=module.k8s_platform \
-  -target=module.preflight -target=module.secrets -target=module.iam \
-  -target=module.cluster_resolver -target=module.cluster \
+  -target=module.iam -target=module.cluster \
   -target=module.kms
 
-# 2. The flow-log bucket:
+# 3. The flow-log bucket:
 #  (a) RETENTION ELAPSED — empty all object versions, then destroy module.network.
 #  (b) RETENTION NOT ELAPSED — you cannot delete the objects yet. Wait out the window,
 #      or remove the bucket from state (terraform state rm 'module.network[0].aws_s3_bucket.flow_logs'

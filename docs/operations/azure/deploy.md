@@ -18,10 +18,9 @@ Architecture: [`../../architecture/azure.md`](../../architecture/azure.md) · Pr
 ## 1. What it provisions
 
 ```
-resource group → log analytics → network → kms → cluster →
-        (network-resolver, cluster-resolver) → iam → secrets →
-        preflight (full mode, Azure provider) →
-        Layer-3 (operator, security, observability, workload)
+phase1-infra:  resource group → log analytics → network → kms → cluster → iam → kubeconfig
+phase2-deploy: secrets → preflight (full mode, Azure provider) →
+               Layer-3 (operator, security, observability, workload)
 ```
 
 - **network** — VNet (nodes only; pods use the CNI overlay), NAT gateway, Azure Firewall
@@ -40,10 +39,9 @@ resource group → log analytics → network → kms → cluster →
 
 ---
 
-> The **greenfield composition root** (`azure-full`) is consumer-owned scaffolding, not shipped
-> product code — the shipped product is the `modules/azure/*` building blocks + the charts. Copy the
-> reference composition into your own IaC repo, wire your backend/state, or author an equivalent
-> root that composes the same modules. The commands below assume you are in such a root.
+> The shipped greenfield entry point is [`roots/azure-full`](../../../roots/azure-full). It uses
+> local state by default for reviewability; production installs should copy the roots or add a
+> backend block that matches the customer's state policy.
 
 ## 2. Prerequisites
 
@@ -57,23 +55,23 @@ resource group → log analytics → network → kms → cluster →
 ```bash
 mage preflightBuild   # builds operator/bin/preflight
 az login && az account set --subscription <SUBSCRIPTION_ID>
-# In your azure-full composition root, create terraform.tfvars from
-# terraform.tfvars.example: subscription_id, tenant_id, location, name,
-# workload_spec_yaml, control_plane_fqdn, secrets.
+cp roots/azure-full/phase1-infra/terraform.tfvars.example roots/azure-full/phase1-infra/terraform.tfvars
+cp roots/azure-full/phase2-deploy/terraform.tfvars.example roots/azure-full/phase2-deploy/terraform.tfvars
 ```
 
 ---
 
-## 3. Single apply (greenfield)
+## 3. Two-phase apply (greenfield)
 
-`azure-full` is a **single `terraform apply`** for greenfield:
+`azure-full` is intentionally split into two Terraform roots. Phase 1 provisions cloud resources and
+writes the kubeconfig. Phase 2 reads phase-1 state, creates secret material, runs preflight against
+the live AKS cluster, and deploys the cloud-agnostic Layer 3.
 
 - **kubeconfig** is generated **in-graph** from the cluster output (`local_sensitive_file`) — no
-  manual `az aks get-credentials`. The `kubernetes`/`helm`/`kubectl` providers configure from the
-  `cluster-resolver` outputs (resolved at apply).
-- **install tier** defaults to `install_tier_override = "A"`, making `install_tier` plan-time-known
-  so the Layer-3 `count`s resolve in one apply. Preflight still runs as the gate — `fail_on_red`
-  blocks a red verdict; the override only fixes the A/B tier.
+  manual `az aks get-credentials`.
+- **install tier** is derived in phase 2 from the preflight report. A freshly provisioned cluster
+  should resolve to Tier A when the deploy identity can create the CRD/RBAC; set
+  `install_tier_override = "A"` only for break-glass recovery.
 - **Cilium** is the AKS dataplane, created with the cluster — no Cilium Helm release; nodes are
   `Ready` and pods land on the overlay CIDR from the start.
 
@@ -87,7 +85,13 @@ az login && az account set --subscription <SUBSCRIPTION_ID>
 > the cluster module) so the providers can create namespaced resources.
 
 ```bash
-# from your azure-full composition root
+# phase 1: cloud infrastructure
+cd roots/azure-full/phase1-infra
+terraform init
+terraform apply -auto-approve
+
+# phase 2: preflight + Kubernetes deploy
+cd ../phase2-deploy
 terraform init
 
 # The refs the binary's --cloud=azure provider reads from env (resolved-resource
@@ -101,9 +105,6 @@ export PREFLIGHT_AZURE_KEY_VAULT_ID="/subscriptions/${AZURE_SUBSCRIPTION_ID}/res
 export PREFLIGHT_AZURE_VNET_ID="/subscriptions/${AZURE_SUBSCRIPTION_ID}/resourceGroups/${NAME}-rg/providers/Microsoft.Network/virtualNetworks/${NAME}-vnet"
 export PREFLIGHT_AZURE_UAMI_PRINCIPAL_ID="$(az identity show -g ${NAME}-rg -n ${NAME}-workload --query principalId -o tsv 2>/dev/null)"
 
-# One apply: provision network → kms → cluster → resolvers → iam → secrets,
-# generate the kubeconfig in-graph, run the preflight gate (full mode), then the
-# Layer-3 operator/security/observability/workload.
 terraform apply -auto-approve
 ```
 
@@ -119,12 +120,6 @@ reconciles to `Ready=True`.
 > DOCKERCFG=$(printf '{"auths":{"ghcr.io":{"auth":"%s"}}}' "$AUTH" | base64)
 > terraform apply -auto-approve -var "image_pull_secret_b64=$DOCKERCFG"
 > ```
-
-> **Deriving the tier.** Set `install_tier_override=""` to derive the tier from the preflight report
-> instead of forcing `"A"`; that path needs two applies (`-target=module.preflight`, then a full
-> apply).
-
----
 
 ## 4. Operating notes (Azure-specific)
 
@@ -180,6 +175,11 @@ toggles (`provision` | `byo`). Supply the matching `byo_*` values for any concer
 ## 6. Teardown
 
 ```bash
+# Destroy phase 2 first, then phase 1.
+cd roots/azure-full/phase2-deploy
+terraform destroy -auto-approve
+
+cd ../phase1-infra
 terraform destroy -auto-approve
 # Key Vault has purge protection + soft delete; it stays soft-deleted for the
 # retention window after destroy. The flow-log container immutability policy is

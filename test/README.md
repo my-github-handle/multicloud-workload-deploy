@@ -42,21 +42,20 @@ on the cluster, so it is opt-in:
 E2E_HPA_SCALE=true KUBECONFIG=... go test -tags e2e ./test/e2e/ -run HPAScalesUp -v -timeout 15m
 ```
 
-**AWS greenfield test.** `TestAWSFullGreenfield` drives the `live/aws-full` two-phase Terraform
+**AWS greenfield test.** `TestAWSFullGreenfield` is intended to drive the AWS two-phase Terraform
 apply against a **real AWS account**, asserts the satellite came up (preflight verdict, install
 tier), and tears down. It provisions a private EKS cluster + AWS Network Firewall + NAT (~20-30
 min, real cost), so it is build-tagged `e2e_aws` (separate from the `e2e` cluster suite) and gated
 on `E2E_AWS=true`. Auth uses an AWS profile (default `c3.test.aws`, which assumes the test role via
 `~/.aws/config`); the test clears any ambient static `AWS_*` creds so the profile is used.
 
-These tests drive a composition root under `live/` (consumer-owned scaffolding, not tracked — see
-[`../docs/operations/aws/deploy.md`](../docs/operations/aws/deploy.md)). Provide the
-`live/aws-full` root and its `terraform.tfvars` before running; the test skips/fails clearly if the
-tfvars is absent.
+The packaged manual path is [`../roots/aws-full`](../roots/aws-full). If the test harness is kept
+on the older `live/aws-full` path, mirror the two root phases there or update the harness to point
+at `roots/aws-full/{phase1-infra,phase2-deploy}` before running.
 
 ```bash
 mage preflightBuild                                                        # build the binary first
-# author live/aws-full/terraform.tfvars (region, name, workload_spec_yaml, …)
+# author/copy phase1 and phase2 terraform.tfvars from roots/aws-full/*/terraform.tfvars.example
 E2E_AWS=true mage testE2EAWS
 # or: E2E_AWS=true AWS_PROFILE=c3.test.aws go test -tags e2e_aws ./test/e2e/ -run TestAWSFullGreenfield -v -timeout 75m
 ```

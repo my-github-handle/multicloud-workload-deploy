@@ -49,6 +49,13 @@ it into the full child object set with a `Ready` status.
    spec:
      image: nginx:1.27
      port: 80
+     resources:
+       requests:
+         cpu: 100m
+         memory: 128Mi
+       limits:
+         cpu: 500m
+         memory: 512Mi
      autoscale: { minReplicas: 2, maxReplicas: 5, targetCPUUtilization: 70 }
    EOF
    ```

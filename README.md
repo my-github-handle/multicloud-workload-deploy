@@ -9,7 +9,8 @@ Two entry shapes:
 
 - **BYOC fast path** (primary) — you already have a cluster; a single `terraform apply` lays down
   the cloud-agnostic Layer-3 deploy (operator, security, observability, workload).
-- **Greenfield** (`<cloud>-full`) — provision the cloud infra *and* deploy, in a single apply.
+- **Greenfield** (`<cloud>-full`) — provision cloud infra in phase 1, then run preflight and deploy
+  Layer 3 in phase 2 against the live cluster.
 
 > Specification & design: [`docs/spec.md`](docs/spec.md) ·
 > [`docs/architecture.md`](docs/architecture.md) · [`docs/design.md`](docs/design.md).
@@ -23,7 +24,7 @@ Two entry shapes:
 | **1 — Building blocks** | `network`, `kms`, `iam`, `secrets` (+ GCP `project`); provision-or-BYO | `modules/<cloud>/` |
 | **2 — Per-cloud platform** | hardened private `cluster` (EKS/GKE/AKS) + `cluster-resolver` (uniform auth) | `modules/<cloud>/` |
 | **3 — Cloud-agnostic Kubernetes** | the operator + `k8s-platform` / `k8s-security` / `k8s-observability` / `workload` | `modules/`, `operator/`, `charts/` |
-| **4 — Composition** | `_agnostic-deploy` (BYOC) and `<cloud>-full` (greenfield) roots | consumer-owned (see docs) |
+| **4 — Composition** | `agnostic-deploy` (BYOC) and `<cloud>-full` (greenfield) roots | `roots/` |
 | **Cross-cutting** | the staged **preflight** gate (Go binary + per-cloud `cloud.Provider`) | `operator/cmd/preflight`, `operator/internal/cloud/<cloud>` |
 | **5 — Packaging** | BOM-versioned bundle (operator image + charts + modules) with provenance | `release/`, `magefile_release.go` |
 
@@ -43,13 +44,14 @@ modules/
   k8s-platform/ k8s-security/ k8s-observability/ workload/ preflight/   cloud-agnostic Layer 3
 operator/          the workload operator + CRD; cmd/preflight binary; internal/cloud/<cloud> providers
 docs/              spec, architecture, design, per-cloud architecture + operations runbooks
+roots/             runnable Terraform entry points: BYOC and two-phase greenfield roots
 release/           BOM template + release tooling
 test/              e2e tests + runbooks
 ```
 
-Greenfield composition roots (`<cloud>-full`) and the BYOC `_agnostic-deploy` root are
-**consumer-owned scaffolding** — copy a reference composition from the per-cloud runbook into your
-own IaC repo and wire your backend/state. They are not shipped product code.
+Greenfield composition roots (`<cloud>-full`) and the BYOC `agnostic-deploy` root are shipped as
+runnable reference entry points under [`roots/`](roots/). Customers can run them directly for a
+standard install or copy them into their own IaC repo to wire remote backends/state policy.
 
 ---
 
@@ -109,6 +111,6 @@ cluster/cloud).
 
 | Cloud | Building blocks | Greenfield root | Real preflight provider |
 |---|---|---|---|
-| AWS | ✅ | ✅ `aws-full` | ✅ |
-| GCP | ✅ | ✅ `gcp-full` | ✅ |
-| Azure | ✅ | ✅ `azure-full` | ✅ |
+| AWS | ✅ | ✅ `roots/aws-full/{phase1-infra,phase2-deploy}` | ✅ |
+| GCP | ✅ | ✅ `roots/gcp-full/{phase1-infra,phase2-deploy}` | ✅ |
+| Azure | ✅ | ✅ `roots/azure-full/{phase1-infra,phase2-deploy}` | ✅ |

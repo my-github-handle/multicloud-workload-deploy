@@ -18,10 +18,10 @@ Architecture: [`../../architecture/gcp.md`](../../architecture/gcp.md) · Prefli
 ## 1. What it provisions
 
 ```
-project → network → kms → cluster (Dataplane V2 = Cilium native) →
-        (network-resolver, cluster-resolver) → secrets → iam →
-        preflight (full mode, GCP provider) →
-        Layer-3 (operator, security, observability, workload)
+phase1-infra:  project → network → kms → cluster (Dataplane V2 = Cilium native) →
+               iam → kubeconfig
+phase2-deploy: secrets → preflight (full mode, GCP provider) →
+               Layer-3 (operator, security, observability, workload)
 ```
 
 - **project** — a dedicated GCP project (or a resolved BYO project) with the required service APIs enabled.
@@ -39,10 +39,9 @@ is enabled on the cluster.
 
 ---
 
-> The **greenfield composition root** (`gcp-full`) is consumer-owned scaffolding, not shipped
-> product code — the shipped product is the `modules/gcp/*` building blocks + the charts. Copy the
-> reference composition into your own IaC repo, wire your backend/state, or author an equivalent
-> root that composes the same modules. The commands below assume you are in such a root.
+> The shipped greenfield entry point is [`roots/gcp-full`](../../../roots/gcp-full). It uses local
+> state by default for reviewability; production installs should copy the roots or add a backend
+> block that matches the customer's state policy.
 
 ## 2. Prerequisites
 
@@ -59,35 +58,35 @@ is enabled on the cluster.
 ```bash
 mage preflightBuild   # builds operator/bin/preflight
 # Seed terraform.tfvars from the example and edit the placeholders:
-cp docs/operations/gcp/examples/greenfield.tfvars.example <your-gcp-full-root>/terraform.tfvars
+cp roots/gcp-full/phase1-infra/terraform.tfvars.example roots/gcp-full/phase1-infra/terraform.tfvars
+cp roots/gcp-full/phase2-deploy/terraform.tfvars.example roots/gcp-full/phase2-deploy/terraform.tfvars
 ```
 
-A complete, copy-pasteable greenfield config is in
-[`examples/greenfield.tfvars.example`](./examples/greenfield.tfvars.example).
+The operations example [`examples/greenfield.tfvars.example`](./examples/greenfield.tfvars.example)
+contains the same workload values in a single file for comparison.
 
 ---
 
-## 3. Single apply
+## 3. Two-phase apply
 
-`gcp-full` provisions everything and deploys the satellite in **one `terraform apply`**. The
-in-cluster providers (`kubernetes`/`helm`/`kubectl`) take the cluster endpoint/CA from the
-cluster-resolver and a fresh `google_client_config` access token; on a fresh state those are
-computed values, so Terraform defers the in-cluster resources until after the cluster exists —
-all within the same apply. The preflight binary's kubeconfig is rendered during the apply
-(`local_file.kubeconfig`, gke-gcloud-auth-plugin auth), and the install tier is fixed to `A`
-(a freshly provisioned cluster's deploy identity can always create the cluster-scoped CRD +
-ClusterRole), so the platform/workload counts are known at plan time.
+`gcp-full` is intentionally split into two Terraform roots. Phase 1 provisions cloud resources and
+writes the kubeconfig. Phase 2 reads phase-1 state, runs preflight against the live GKE cluster,
+creates secret material, and deploys the cloud-agnostic Layer 3.
 
 ```bash
-# from your gcp-full composition root
+# phase 1: cloud infrastructure
+cd roots/gcp-full/phase1-infra
+terraform init
+terraform apply -auto-approve
+
+# phase 2: preflight + Kubernetes deploy
+cd ../phase2-deploy
 terraform init
 
 # The refs the preflight binary's --cloud=gcp provider reads from env.
-export PREFLIGHT_GCP_PROJECT_ID="$(grep -E '^project_id' terraform.tfvars | cut -d'"' -f2)"
-export PREFLIGHT_GCP_REGION="$(grep -E '^region' terraform.tfvars | cut -d'"' -f2)"
-export PREFLIGHT_GCP_ROUTER_NAME="$(grep -E '^name' terraform.tfvars | cut -d'"' -f2)-router"
-# KMS/network refs resolve from state on a re-plan; on the first apply they are
-# discovered as the modules create them.
+export PREFLIGHT_GCP_PROJECT_ID="$(terraform -chdir=../phase1-infra output -raw project_id)"
+export PREFLIGHT_GCP_REGION="$(terraform -chdir=../phase1-infra output -raw region)"
+export PREFLIGHT_GCP_ROUTER_NAME="$(terraform -chdir=../phase1-infra output -raw router_name)"
 
 terraform apply -auto-approve
 ```
@@ -183,16 +182,18 @@ Two resources resist a plain `terraform destroy`:
   for destruction).
 
 ```bash
-# 1. Destroy everything EXCEPT the flow-log bucket and the CryptoKey.
-terraform destroy -auto-approve \
-  -target=module.workload -target=module.k8s_observability \
-  -target=module.k8s_security -target=module.k8s_platform \
-  -target=module.preflight -target=module.secrets -target=module.iam \
-  -target=module.cluster_resolver -target=module.cluster
+# 1. Destroy phase 2 first (Layer 3 + secrets).
+cd roots/gcp-full/phase2-deploy
+terraform destroy -auto-approve
 
-# 2. CryptoKey: remove the prevent_destroy lifecycle block and re-apply before destroying it,
+# 2. Destroy the cluster and IAM (leaving network, KMS, and project in place).
+cd ../phase1-infra
+terraform destroy -auto-approve \
+  -target=module.iam -target=module.cluster
+
+# 3. CryptoKey: remove the prevent_destroy lifecycle block and re-apply before destroying it,
 #    or leave the key in place (KMS keys are scheduled for destruction, not deleted immediately).
-# 3. Flow-log bucket: empty all object versions and destroy module.network once retention elapses;
+# 4. Flow-log bucket: empty all object versions and destroy module.network once retention elapses;
 #    until then the objects cannot be deleted.
 ```
 

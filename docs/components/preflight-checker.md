@@ -1,7 +1,7 @@
 # Preflight Checker
 
-**Status:** Implemented (cloud stages 0–3 via a provider interface + fake; real per-cloud providers
-deferred. Kubernetes stages 4–5 implemented for real.)
+**Status:** Implemented (cloud stages 0–3 via a provider interface; Kubernetes stages 4–5
+implemented for real.)
 **Layer:** orchestration (invoked by the Terraform deploy paths before any resource is created)
 
 > Parent documents: [`../design.md`](../design.md) (§3 Layered Preflight) ·
@@ -45,11 +45,11 @@ Stage 5  workload readiness  ─┘
 
 ### Blocking-mask (full / greenfield mode)
 
-In `<cloud>-full`, the cloud stages (0–3) are provisioned by the same apply, so they're marked
-**non-blocking**. A non-blocking stage keeps its *true* severity in the report (a disabled BYO key
-still shows red) but contributes at most amber to the verdict and never short-circuits — so the
-Kubernetes deploy target (stages 4–5) always runs. The report is never rewritten to hide a real
-gap; only its gating effect is masked.
+In `<cloud>-full/phase2-deploy`, cloud stages (0–3) cover resources created by phase 1, so they're
+marked **non-blocking**. A non-blocking stage keeps its *true* severity in the report (a disabled
+BYO key still shows red) but contributes at most amber to the verdict and never short-circuits —
+so the Kubernetes deploy target (stages 4–5) always runs. The report is never rewritten to hide a
+real gap; only its gating effect is masked.
 
 In agnostic / BYOC mode every stage blocks, and the first red short-circuits the rest (later stages
 are marked `skipped`).
@@ -59,8 +59,7 @@ are marked `skipped`).
 ## 3. How the stages run
 
 - **Cloud stages 0–3** call a `PreflightProvider` interface (identity / kms / secrets / egress).
-  A configurable **fake** drives them today so the binary and report assembly are fully tested;
-  real AWS/GCP/Azure providers are added per cloud and must emit the stable result IDs. Stage 3's
+  AWS/GCP/Azure providers and a configurable fake emit the same stable result IDs. Stage 3's
   `egress.controlplane_fqdn` is load-bearing — blocked means the connect-agent can't dial home, so
   it blocks the deploy.
 - **Kubernetes stages 4–5** run for real via `client-go` against the target cluster: NetworkPolicy

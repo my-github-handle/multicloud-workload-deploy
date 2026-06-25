@@ -126,18 +126,18 @@ permission probe.
 
 ## 6. `gcp-full` Greenfield Composition
 
-`gcp-full` provisions the project, VPC/firewall/flow-logs, CryptoKey, GKE cluster, secrets, and
-GSA + Workload Identity, then composes the cloud-agnostic Layer-3 deploy (preflight → platform →
-security → observability → workload). Each Layer-1/2 block is independently create-or-BYO.
+`gcp-full` provisions the project, VPC/firewall/flow-logs, CryptoKey, GKE cluster, and GSA +
+Workload Identity in `phase1-infra`, then `phase2-deploy` creates secrets and composes the
+cloud-agnostic Layer-3 deploy (preflight → platform → security → observability → workload). Each
+Layer-1/2 block is independently create-or-BYO.
 
-### Single apply
+### Two-phase apply
 
-Greenfield provisions and deploys in one `terraform apply`. The in-cluster providers take the
-cluster endpoint/CA from the cluster-resolver and a fresh access token; on a fresh state those are
-computed, so Terraform defers the in-cluster resources until after the cluster is created within
-the same apply. The preflight binary's kubeconfig is rendered during the apply, and the install
-tier is fixed to `A` (a freshly provisioned cluster's deploy identity can create the cluster-scoped
-CRD + ClusterRole) so the platform/workload counts are known at plan time.
+Greenfield provisions and deploys in two Terraform applies. Phase 1 creates the cluster and writes
+a kubeconfig that uses `gke-gcloud-auth-plugin`; phase 2 uses that kubeconfig for preflight and the
+`kubernetes`/`helm`/`kubectl` providers. The split is necessary because preflight is a plan-time
+`external` data source, and Kubernetes stages must validate the live cluster rather than a computed
+future endpoint.
 
 ### Operator image distribution
 
