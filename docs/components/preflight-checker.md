@@ -1,7 +1,7 @@
 # Preflight Checker
 
-**Status:** Implemented (cloud stages 0–3 via a provider interface with AWS/GCP/Azure providers;
-Kubernetes stages 4–5 implemented for real.)
+**Status:** Implemented (cloud stages 0–3 via a provider interface; Kubernetes stages 4–5
+implemented for real.)
 **Layer:** orchestration (invoked by the Terraform deploy paths before any resource is created)
 
 > Parent documents: [`../design.md`](../design.md) (§3 Layered Preflight) ·

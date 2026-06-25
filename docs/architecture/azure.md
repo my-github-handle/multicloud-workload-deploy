@@ -154,8 +154,8 @@ copied into a customer's IaC repo to wire their backend/state.
 Greenfield `azure-full` is two Terraform applies:
 
 - `phase1-infra` creates the VNet, Key Vault, AKS, UAMI, and an exec-auth kubeconfig.
-- `phase2-deploy` reads phase-1 state, runs preflight against the live AKS API server, creates
-  Key Vault secret material, and installs Layer 3.
+- `phase2-deploy` reads phase-1 state, creates Key Vault secret material, runs preflight against
+  the live AKS API server, and installs Layer 3.
 
 A private AKS API server is reachable only from inside the VNet, so apply from a VNet-connected
 context — or, for testing, flip the endpoint to public with an IP allowlist. See

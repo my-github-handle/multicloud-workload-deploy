@@ -186,7 +186,7 @@ Two resources resist a plain `terraform destroy`:
 cd roots/gcp-full/phase2-deploy
 terraform destroy -auto-approve
 
-# 2. Destroy phase 1 EXCEPT the flow-log bucket and the CryptoKey.
+# 2. Destroy the cluster and IAM (leaving network, KMS, and project in place).
 cd ../phase1-infra
 terraform destroy -auto-approve \
   -target=module.iam -target=module.cluster

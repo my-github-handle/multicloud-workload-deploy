@@ -64,8 +64,8 @@ cp roots/azure-full/phase2-deploy/terraform.tfvars.example roots/azure-full/phas
 ## 3. Two-phase apply (greenfield)
 
 `azure-full` is intentionally split into two Terraform roots. Phase 1 provisions cloud resources and
-writes the kubeconfig. Phase 2 reads phase-1 state, runs preflight against the live AKS cluster,
-creates secret material, and deploys the cloud-agnostic Layer 3.
+writes the kubeconfig. Phase 2 reads phase-1 state, creates secret material, runs preflight against
+the live AKS cluster, and deploys the cloud-agnostic Layer 3.
 
 - **kubeconfig** is generated **in-graph** from the cluster output (`local_sensitive_file`) — no
   manual `az aks get-credentials`.
